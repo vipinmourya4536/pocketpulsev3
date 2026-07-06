@@ -1572,7 +1572,10 @@ window.undoDelete        = undoDelete;
 // INITIALIZE
 // ============================================================
 const ppInit = async () => {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/pp-sw.js');
+  // Unregister stale SWs and skip registration in preview/iframe contexts
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
   try {
     try {
       await db.open();

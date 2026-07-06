@@ -1,73 +1,41 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import Script from 'next/script';
+import { useEffect } from 'react';
 
 export default function Page() {
-  const mounted = useRef(false);
-
   useEffect(() => {
-    if (mounted.current) return;
-    mounted.current = true;
-
     document.body.classList.add('theme-glass');
-    document.body.style.cssText = 'background:#121212;display:flex;justify-content:center;align-items:stretch;min-height:100dvh;overflow:hidden;position:fixed;inset:0;margin:0;padding:0;';
-
-    // Load PocketPulse CSS
-    const ppCSS = document.createElement('link');
-    ppCSS.rel = 'stylesheet';
-    ppCSS.href = '/pp-style.css';
-    document.head.appendChild(ppCSS);
-
-    // Load Google Fonts
-    const fontPre1 = document.createElement('link');
-    fontPre1.rel = 'preconnect';
-    fontPre1.href = 'https://fonts.googleapis.com';
-    document.head.appendChild(fontPre1);
-
-    const fontPre2 = document.createElement('link');
-    fontPre2.rel = 'preconnect';
-    fontPre2.href = 'https://fonts.gstatic.com';
-    fontPre2.crossOrigin = 'anonymous';
-    document.head.appendChild(fontPre2);
-
-    const fontLink = document.createElement('link');
-    fontLink.rel = 'stylesheet';
-    fontLink.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap';
-    document.head.appendChild(fontLink);
-
-    // Load Lucide
-    const loadScript = (src: string, integrity?: string): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        if (integrity) {
-          s.integrity = integrity;
-          s.crossOrigin = 'anonymous';
-        }
-        s.onload = () => resolve();
-        s.onerror = reject;
-        document.body.appendChild(s);
-      });
-    };
-
-    loadScript(
-      'https://unpkg.com/lucide@0.359.0/dist/umd/lucide.js',
-      'sha384-0vHaHWGED6x+95l/Q8Rz5cHc3/A9mBGvHPi+BzHRzOiXO5PwG8ruPb1A1TusUN6c'
-    )
-      .then(() =>
-        loadScript(
-          'https://unpkg.com/dexie@3.2.4/dist/dexie.js',
-          'sha384-dPjGJ3rBpGktXk5Oc6fSuIzpWQb1Uk+yIt23iySD3broHItJTZOIKJVzRDCvW9kx'
-        )
-      )
-      .then(() => loadScript('/pp-app.js'))
-      .catch((err) => console.error('Script load error:', err));
+    document.body.style.cssText =
+      'background:#121212;display:flex;justify-content:center;align-items:stretch;min-height:100dvh;overflow:hidden;position:fixed;inset:0;margin:0;padding:0;';
   }, []);
 
   return (
-    <div dangerouslySetInnerHTML={{ __html: `
-<div class="app-container">
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      />
+      <link rel="stylesheet" href="/pp-style.css" />
 
+      <div className="app-container" dangerouslySetInnerHTML={{ __html: APP_HTML }} />
+
+      <Script
+        src="https://unpkg.com/lucide@0.359.0/dist/umd/lucide.js"
+        strategy="afterInteractive"
+      />
+      <Script
+        src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"
+        strategy="afterInteractive"
+      />
+      <Script src="/pp-app.js" strategy="afterInteractive" />
+    </>
+  );
+}
+
+const APP_HTML = `
   <!-- TAB 1: HOME -->
   <div class="tab-content active" id="tab-home">
     <div class="header">Home</div>
@@ -84,19 +52,13 @@ export default function Page() {
       </div>
     </div>
 
-    <!-- Numpad seamlessly integrated -->
     <div class="numpad-card" id="numpad-wrapper">
       <div class="np-header">
         <div class="np-total" id="np-display">Tap a number...</div>
         <button class="np-undo" data-action="undoTap">↩</button>
       </div>
-
-      <div class="quick-category-slider" id="quick-category-slider">
-      </div>
-
-      <div class="np-grid" id="numpad-grid">
-      </div>
-
+      <div class="quick-category-slider" id="quick-category-slider"></div>
+      <div class="np-grid" id="numpad-grid"></div>
       <div class="np-actions">
         <button class="action-btn btn-clear" data-action="clearNum">✗ Clear</button>
         <button class="action-btn btn-log" data-action="logTransaction">✓ Log</button>
@@ -119,7 +81,6 @@ export default function Page() {
   <!-- TAB 2: REPORTS & LIMITS -->
   <div class="tab-content" id="tab-reports">
     <div class="header">Reports &amp; Limits</div>
-
     <div class="summary-cards">
       <div class="summary-card">
         <div class="sum-label">Spent</div>
@@ -135,28 +96,23 @@ export default function Page() {
         <div style="font-size:12px; color:var(--muted); font-weight:600; margin-top:4px;" id="report-safe">Safe to spend: ₹0</div>
       </div>
     </div>
-
     <div class="section-label">Spending Trend</div>
-    <div class="trend-box" id="trend-box">
-    </div>
-
+    <div class="trend-box" id="trend-box"></div>
     <div class="section-label">By Category</div>
-    <div class="category-breakdown" id="category-breakdown">
-    </div>
-
+    <div class="category-breakdown" id="category-breakdown"></div>
     <div class="section-label">Boundaries</div>
     <div class="limit-box">
       <div class="hero-label" id="limit-label">Weekly Max Limit</div>
       <div class="input-row">
         <span class="currency-symbol-display" style="font-size:24px; font-weight:800; color:var(--accent)">₹</span>
-        <input type="number" class="limit-input" id="limit-input" value="3000">
+        <input type="number" class="limit-input" id="limit-input" value="3000" />
       </div>
     </div>
     <div class="limit-box">
       <div class="hero-label">Expected Earnings</div>
       <div class="input-row">
         <span class="currency-symbol-display" style="font-size:24px; font-weight:800; color:var(--accent)">₹</span>
-        <input type="number" class="limit-input" id="earnings-input" value="8000">
+        <input type="number" class="limit-input" id="earnings-input" value="8000" />
       </div>
     </div>
   </div>
@@ -164,7 +120,6 @@ export default function Page() {
   <!-- TAB 3: SETTINGS -->
   <div class="tab-content" id="tab-settings">
     <div class="header">Settings</div>
-
     <div class="setting-row">
       <div class="setting-label">Accent Color</div>
       <div class="color-dots">
@@ -174,7 +129,6 @@ export default function Page() {
         <div class="dot" data-color="#FF6B4D" style="background:#FF6B4D"></div>
       </div>
     </div>
-
     <div class="setting-row" data-action="openCurrencySheet">
       <div class="setting-label">Currency Symbol</div>
       <div style="display: flex; align-items: center; gap: 4px; color: var(--accent); font-weight:800; cursor:pointer;">
@@ -188,25 +142,21 @@ export default function Page() {
         <button class="link-btn" style="text-align: center; font-weight: 700; padding: 12px; margin: 0;" data-action="exportData">📤 Export Data</button>
         <button class="link-btn" style="text-align: center; font-weight: 700; padding: 12px; margin: 0; position: relative; cursor: pointer;">
           📥 Import Data
-          <input type="file" id="import-file-input" accept=".json" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;">
+          <input type="file" id="import-file-input" accept=".json" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;" />
         </button>
       </div>
     </div>
     <div class="section-label" style="margin-top: 10px;">Customize Quick Chips</div>
-    <div class="numpad-settings-grid" id="numpad-settings-grid">
-    </div>
-
+    <div class="numpad-settings-grid" id="numpad-settings-grid"></div>
     <div class="links">
       <button class="link-btn" data-action="showToast" data-toast="Terms &amp; Conditions modal coming soon">📄 Terms &amp; Conditions</button>
       <button class="link-btn" data-action="showToast" data-toast="Privacy Policy modal coming soon">🔒 Privacy Policy</button>
     </div>
-
     <div style="margin-top: 40px; margin-bottom: 20px;">
       <button class="link-btn" style="width: 100%; color:#FF4D4D; border-color:rgba(255,77,77,0.3); text-align: center; font-weight: 800;" data-action="wipeData">⚠️ Wipe All Data</button>
     </div>
-
     <div class="quote-box">
-      <div class="quote-text">"Take care of the pennies, and the pounds will take care of themselves."</div>
+      <div class="quote-text">&quot;Take care of the pennies, and the pounds will take care of themselves.&quot;</div>
       <div class="quote-thanks">Thanks for choosing us! 🚀</div>
     </div>
   </div>
@@ -229,12 +179,10 @@ export default function Page() {
     <div class="bottom-sheet" id="edit-sheet">
       <div class="sheet-handle"></div>
       <div class="edit-display" id="edit-display">-₹0</div>
-
       <div class="input-group">
         <label class="input-label">Amount (₹)</label>
-        <input type="number" class="form-input" id="edit-amt-input">
+        <input type="number" class="form-input" id="edit-amt-input" />
       </div>
-
       <div class="input-group">
         <label class="input-label">Type</label>
         <div class="type-toggles">
@@ -242,18 +190,14 @@ export default function Page() {
           <button class="type-btn earn" data-action="setType" data-type="earn">💰 Earn</button>
         </div>
       </div>
-
       <div class="input-group">
         <label class="input-label">Category</label>
-        <div class="icon-slider" id="edit-icon-slider">
-        </div>
+        <div class="icon-slider" id="edit-icon-slider"></div>
       </div>
-
       <div class="input-group">
         <label class="input-label">Note</label>
-        <input type="text" class="form-input" id="edit-note-input">
+        <input type="text" class="form-input" id="edit-note-input" />
       </div>
-
       <button class="save-btn" data-action="saveEdit">Save Changes</button>
     </div>
   </div>
@@ -291,8 +235,4 @@ export default function Page() {
 
   <!-- TOAST -->
   <div class="toast" id="toast"></div>
-
-</div>
-` }} />
-  );
-}
+`;

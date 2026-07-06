@@ -1,6 +1,5 @@
 const CACHE_NAME = 'pocketpulse-v9';
 const ASSETS = [
-  './',
   '/pp-style.css',
   '/pp-app.js',
   '/pp-manifest.json',
@@ -27,25 +26,7 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if (e.request.mode === 'navigate') {
-    e.respondWith(
-      caches.match(e.request).then(response => {
-        const base = response ? Promise.resolve(response) : fetch(e.request);
-        return base.then(r => {
-          const headers = new Headers(r.headers);
-          headers.set('X-Content-Type-Options', 'nosniff');
-          headers.set('X-Frame-Options', 'DENY');
-          headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-          return new Response(r.body, {
-            status: r.status,
-            statusText: r.statusText,
-            headers
-          });
-        });
-      })
-    );
-    return;
-  }
+  // Non-navigation: cache-first fallback
   e.respondWith(
     caches.match(e.request).then(response => response || fetch(e.request))
   );
