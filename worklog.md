@@ -100,3 +100,29 @@ Stage Summary:
 - `@keyframes shimmer` preserved as the only remaining CSS animation
 - Zero layout, color, font, spacing, or CSS variable changes
 - File ready for GSAP JS integration (Task 3)
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix tab visibility bug (nav items disappearing) + optimize home scroll performance
+
+Work Log:
+- Analyzed user screenshot with VLM — identified that bottom NAV ITEMS (not tab content) were disappearing when switching tabs
+- Root cause 1: `A.navDot(el, false)` was scaling the ENTIRE `.nav-item` element to `scale: 0`, making icons+labels invisible. GSAP cannot animate `::after` pseudo-elements, so the previous implementation used the parent as a proxy — which destroyed the whole nav item.
+- Root cause 2: GSAP `A.switchTab()` managed `display` via inline styles but NEVER updated the `.active` CSS class. `document.querySelector('.tab-content.active')` always returned `tab-home`, making subsequent switches fail silently (`current === next` early return).
+- Fix 1 (navDot): Replaced `::after` pseudo-element with real `.nav-dot` span elements in HTML. Updated `A.navDot()` to target `el.querySelector('.nav-dot')` instead of the parent. Added CSS `.nav-dot` styling with `transform: scale(0)` default and `.nav-item.active .nav-dot { transform: scale(1) }`.
+- Fix 2 (active class): Added `current.classList.remove('active')` and `next.classList.add('active')` before GSAP animation in `switchTab()`. Added `tabSwitchGen` counter to prevent stale `onComplete` callbacks from interrupted animations. Clean ALL stale inline display styles at start of each switch.
+- Fix 3 (inline display cleanup): `A.switchTab()` now accepts `onDone` callback. On completion, clears inline `display` styles from both `fromEl` and `toEl` so CSS class-based display takes over. `clearProps: 'x,opacity,force3D'` on the final `.set()` prevents transform/opacity accumulation.
+- Scroll performance optimization 1: Removed `force3D: true` from `gsap.defaults()` — was creating excessive GPU layers on every micro-interaction (numpad taps, category chips, etc.). Now only used selectively on tab switch and sheet animations.
+- Scroll performance optimization 2: Simplified `A.staggerCards()` from `{ opacity: 0, y: 20, scale: 0.96 }` to `{ opacity: 0 }` only — eliminated layout-triggering y/scale animations on history cards.
+- Scroll performance optimization 3: Added `historyHasRenderedOnce` flag — stagger animation only plays on first render, not on every tab switch back to home (which re-renders history via `updateState()`).
+- Scroll performance optimization 4: Moved `backdrop-filter: blur(20px)` on `.numpad-card` to `@media (hover: hover) and (pointer: fine)` — removed from touch devices where it causes expensive re-compositing on every scroll pixel inside the scroll container.
+- Scroll performance optimization 5: Added `contain: layout style` to `.tab-content` and `contain: layout style paint` to `.numpad-card` and `contain: content` to `#history-container` for layout containment.
+- Verified with agent-browser: full round-trip tab switching (Home→Reports→Settings→Home→Settings→Reports), rapid-fire stress test, and VLM screenshot verification of all 3 tabs.
+
+Stage Summary:
+- Tab visibility bug fully fixed: all 3 nav items always visible, correct tab content shown, `.active` class properly managed
+- Nav dot animation now targets real DOM element instead of parent proxy
+- Generation counter prevents stale animation callbacks
+- Home scroll performance improved: no force3D on micro-interactions, opacity-only stagger, no backdrop-filter on touch, CSS contain properties
+- All fixes verified via agent-browser tests and VLM screenshot analysis

@@ -168,13 +168,13 @@ const APP_HTML = `
   <!-- BOTTOM NAV -->
   <div class="bottom-nav">
     <div class="nav-item active" data-action="switchTab" data-tab="home">
-      <i data-lucide="wallet"></i><span class="nav-label">Home</span>
+      <i data-lucide="wallet"></i><span class="nav-label">Home</span><span class="nav-dot"></span>
     </div>
     <div class="nav-item" data-action="switchTab" data-tab="reports">
-      <i data-lucide="bar-chart-2"></i><span class="nav-label">Reports</span>
+      <i data-lucide="bar-chart-2"></i><span class="nav-label">Reports</span><span class="nav-dot"></span>
     </div>
     <div class="nav-item" data-action="switchTab" data-tab="settings">
-      <i data-lucide="settings"></i><span class="nav-label">Settings</span>
+      <i data-lucide="settings"></i><span class="nav-label">Settings</span><span class="nav-dot"></span>
     </div>
   </div>
 

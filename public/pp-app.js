@@ -23,19 +23,21 @@ function debounce(fn, delay) {
 function initGSAP() {
   if (typeof gsap === 'undefined') return;
   gsap.ticker.lagSmoothing(0);
-  gsap.defaults({ overwrite: 'auto', force3D: true });
+  gsap.defaults({ overwrite: 'auto' });
 }
 
 const A = {
   // ── Tab Switch ──────────────────────────────────────────
-  switchTab(fromEl, toEl, direction) {
+  switchTab(fromEl, toEl, direction, onDone) {
     const dx = 50 * direction;
-    const tl = gsap.timeline();
+    const tl = gsap.timeline({
+      onComplete: onDone
+    });
     gsap.killTweensOf([fromEl, toEl]);
-    tl.set(toEl, { display: 'block', opacity: 0, x: dx, y: 0 })
-      .to(fromEl, { opacity: 0, x: -dx * 0.6, duration: 0.18, ease: 'power2.in' }, 0)
-      .to(toEl,   { opacity: 1, x: 0,    duration: 0.32, ease: 'power3.out' }, 0.12)
-      .set(fromEl, { display: 'none', x: 0, opacity: 0 });
+    tl.set(toEl, { display: 'block', opacity: 0, x: dx, y: 0, force3D: true })
+      .to(fromEl, { opacity: 0, x: -dx * 0.6, duration: 0.18, ease: 'power2.in', force3D: true }, 0)
+      .to(toEl,   { opacity: 1, x: 0,    duration: 0.32, ease: 'power3.out', force3D: true }, 0.12)
+      .set(fromEl, { display: 'none', x: 0, opacity: 0, clearProps: 'x,opacity,force3D' });
     return tl;
   },
 
@@ -44,9 +46,9 @@ const A = {
     const tl = gsap.timeline();
     gsap.killTweensOf([overlay, sheet]);
     tl.set(overlay, { visibility: 'visible' })
-      .set(sheet, { transform: 'translateY(100%)' })
+      .set(sheet, { transform: 'translateY(100%)', force3D: true })
       .to(overlay, { opacity: 1, duration: 0.25, ease: 'power2.out' }, 0)
-      .to(sheet,   { transform: 'translateY(0%)', duration: 0.45, ease: 'back.out(1.2)' }, 0.08);
+      .to(sheet,   { transform: 'translateY(0%)', duration: 0.45, ease: 'back.out(1.2)', force3D: true }, 0.08);
     return tl;
   },
 
@@ -58,14 +60,14 @@ const A = {
       }
     });
     gsap.killTweensOf([overlay, sheet]);
-    tl.to(sheet,   { transform: 'translateY(100%)', duration: 0.32, ease: 'power3.in' }, 0)
+    tl.to(sheet,   { transform: 'translateY(100%)', duration: 0.32, ease: 'power3.in', force3D: true }, 0)
       .to(overlay, { opacity: 0, duration: 0.22, ease: 'power2.in' }, 0.1);
     return tl;
   },
 
   snapSheetBack(sheet) {
     gsap.killTweensOf(sheet);
-    return gsap.to(sheet, { transform: 'translateY(0%)', duration: 0.4, ease: 'elastic.out(1, 0.5)' });
+    return gsap.to(sheet, { transform: 'translateY(0%)', duration: 0.4, ease: 'elastic.out(1, 0.5)', force3D: true });
   },
 
   dismissSheetDrag(sheet, overlay) {
@@ -128,9 +130,10 @@ const A = {
   },
 
   navDot(el, active) {
-    gsap.killTweensOf(el);
-    // ::after pseudo — animate the element itself as proxy
-    gsap.to(el, { scale: active ? 1 : 0, duration: 0.4, ease: 'back.out(3)' });
+    const dot = el.querySelector('.nav-dot');
+    if (!dot) return;
+    gsap.killTweensOf(dot);
+    gsap.to(dot, { scale: active ? 1 : 0, duration: 0.35, ease: 'back.out(3)' });
   },
 
   // ── Category Chips ──────────────────────────────────────
@@ -175,8 +178,8 @@ const A = {
   staggerCards(cards) {
     if (!cards.length) return;
     gsap.fromTo(cards,
-      { opacity: 0, y: 20, scale: 0.96 },
-      { opacity: 1, y: 0, scale: 1, duration: 0.35, stagger: 0.04, ease: 'power3.out' }
+      { opacity: 0 },
+      { opacity: 1, duration: 0.25, stagger: 0.025, ease: 'power2.out' }
     );
   },
 
@@ -633,9 +636,11 @@ let historyPage = 0;
 const HISTORY_PAGE_SIZE = 15;
 let historyTotalCount = 0;
 let isLoadingHistory = false;
+let historyHasRenderedOnce = false;
 
 // Concurrency guard
 let isUpdatingState = false;
+let tabSwitchGen = 0; // Prevents stale onComplete callbacks from interrupted animations
 
 // Hero counter animation state
 let previousSpendPaise = 0;
@@ -650,12 +655,14 @@ function switchTab(tabId, el) {
 
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.remove('active');
-    const dot = n;
-    if (typeof gsap !== 'undefined') A.navDot(dot, false);
+    if (typeof gsap !== 'undefined') A.navDot(n, false);
   });
   if (el) {
     el.classList.add('active');
-    if (typeof gsap !== 'undefined') A.navTap(el);
+    if (typeof gsap !== 'undefined') {
+      A.navTap(el);
+      A.navDot(el, true);
+    }
   }
   
   currentTab = tabId;
@@ -665,13 +672,24 @@ function switchTab(tabId, el) {
   const toIdx = tabs.indexOf(tabId);
   const dir = toIdx > fromIdx ? 1 : -1;
 
+  // Always manage .active class so querySelector('.tab-content.active') stays correct
+  current.classList.remove('active');
+  next.classList.add('active');
+
   if (typeof gsap !== 'undefined') {
-    A.switchTab(current, next, dir);
-  } else {
-    current.classList.remove('active');
-    next.classList.add('active');
+    // Clean ALL stale inline display styles from previous (possibly interrupted) animations
+    document.querySelectorAll('.tab-content').forEach(t => { t.style.display = ''; });
+    // Re-apply: keep current visible for the exit animation, next gets set by GSAP
+    current.style.display = 'block';
+    const gen = ++tabSwitchGen;
+    A.switchTab(current, next, dir, () => {
+      // Ignore stale callbacks from interrupted animations
+      if (gen !== tabSwitchGen) return;
+      current.style.display = '';
+      next.style.display = '';
+    });
   }
-  
+
   updateState();
 
   if (tabId === 'home') {
@@ -1277,10 +1295,11 @@ async function renderHistory(reset = false) {
   container.appendChild(fragment);
   lucide.createIcons({ nodes: [container] }); // Only scan new nodes
 
-  // GSAP staggered card entrance
-  if (typeof gsap !== 'undefined' && historyPage === 1) {
+  // GSAP staggered card entrance — only on first render to avoid re-animation on tab switches
+  if (typeof gsap !== 'undefined' && historyPage === 1 && !historyHasRenderedOnce) {
     const cards = container.querySelectorAll('.entry-card-wrapper');
     A.staggerCards(Array.from(cards));
+    historyHasRenderedOnce = true;
   }
 
   currentVisibleTxs = [...currentVisibleTxs, ...txs];

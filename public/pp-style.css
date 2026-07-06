@@ -85,6 +85,7 @@ body { background: #121212; display: flex; justify-content: center; align-items:
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(100px + env(safe-area-inset-bottom));
   overscroll-behavior-y: auto;
+  contain: layout style;
 }
 .tab-content::-webkit-scrollbar { display: none; }
 .tab-content.active {
@@ -117,8 +118,13 @@ body { background: #121212; display: flex; justify-content: center; align-items:
 .numpad-card {
   background: var(--np-card-bg); border: 1px solid var(--np-card-border); border-radius: 24px; padding: 20px; margin-bottom: 24px;
   background-image: var(--np-card-grad);
-  backdrop-filter: var(--np-card-blur); -webkit-backdrop-filter: var(--np-card-blur);
   width: 100%; max-width: 560px; margin-left: auto; margin-right: auto;
+  contain: layout style paint;
+}
+@media (hover: hover) and (pointer: fine) {
+  .numpad-card {
+    backdrop-filter: var(--np-card-blur); -webkit-backdrop-filter: var(--np-card-blur);
+  }
 }
 .np-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .np-total { font-size: 28px; font-weight: 800; color: var(--numpad-text); letter-spacing: -1px; min-height: 34px; }
@@ -207,6 +213,7 @@ body { background: #121212; display: flex; justify-content: center; align-items:
 
 /* Loading state for history */
 #history-container.loading { opacity: 0.4; pointer-events: none; }
+#history-container { contain: content; }
 
 /* Load More button */
 .load-more-btn {
@@ -302,11 +309,12 @@ body { background: #121212; display: flex; justify-content: center; align-items:
   padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px;
   position: relative;
 }
-.nav-item::after {
-  content: ''; position: absolute; bottom: 2px; left: 50%; width: 4px; height: 4px;
+.nav-dot {
+  position: absolute; bottom: 2px; left: 50%; width: 4px; height: 4px;
   background: var(--accent); border-radius: 50%;
+  transform: scale(0); transform-origin: center;
 }
-.nav-item.active::after { }
+.nav-item.active .nav-dot { transform: scale(1); }
 .nav-item.active { color: var(--accent); }
 .nav-item:active { }
 @media (hover: none) { .nav-item:active { opacity: 0.7; } }
