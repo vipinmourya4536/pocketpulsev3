@@ -1,0 +1,1696 @@
+     1→// ============================================================
+     2→// UTILITIES — Security & Performance
+     3→// ============================================================
+     4→
+     5→/** HTML-escape a string to prevent XSS when used in safe contexts */
+     6→function sanitize(str) {
+     7→  const d = document.createElement('div');
+     8→  d.textContent = String(str || '');
+     9→  return d.innerHTML;
+    10→}
+    11→
+    12→/** Debounce — delays fn execution until after `delay` ms of inactivity */
+    13→function debounce(fn, delay) {
+    14→  let t;
+    15→  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+    16→}
+    17→
+    18→// ============================================================
+    19→// HARDWARE NAVIGATION MANAGERS
+    20→// ============================================================
+    21→class GestureManager {
+    22→  constructor(container, tabs, onSwipe) {
+    23→    this.container = container;
+    24→    this.tabs = tabs;
+    25→    this.onSwipe = onSwipe;
+    26→    this.startX = 0;
+    27→    this.startY = 0;
+    28→    this.startTime = 0;
+    29→    this.isTracking = false;
+    30→    this.shouldSwitch = false;
+    31→    this.currentTabIndex = 0;
+    32→    this.EDGE_ZONE = 28; 
+    33→    this.SWIPE_THRESHOLD = 55; 
+    34→    this.VELOCITY_THRESHOLD = 0.25; 
+    35→    this.MAX_VERTICAL_DRIFT = 90; 
+    36→    this.MAX_DIAGONAL_RATIO = 0.5; 
+    37→    this.bind();
+    38→  }
+    39→  
+    40→  bind() {
+    41→    this.container.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: true });
+    42→    this.container.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: true });
+    43→    this.container.addEventListener('touchend', this.onTouchEnd.bind(this), { passive: true });
+    44→  }
+    45→  
+    46→  isScrollableElement(target) {
+    47→    return !!target.closest('.quick-category-slider, .icon-slider, .trend-box, #history-container, .bottom-sheet, .numpad-card, input, textarea, .entry-card-wrapper');
+    48→  }
+    49→  
+    50→  onTouchStart(e) {
+    51→    const touch = e.changedTouches[0];
+    52→    this.startX = touch.clientX;
+    53→    this.startY = touch.clientY;
+    54→    this.startTime = performance.now();
+    55→    this.isTracking = true;
+    56→    this.shouldSwitch = false;
+    57→    
+    58→    const isEdge = this.startX <= this.EDGE_ZONE || this.startX >= window.innerWidth - this.EDGE_ZONE;
+    59→    const isScrollable = this.isScrollableElement(e.target);
+    60→    this.shouldSwitch = isEdge || !isScrollable;
+    61→  }
+    62→  
+    63→  onTouchMove(e) {
+    64→    if (!this.isTracking || !this.shouldSwitch) return;
+    65→    
+    66→    const touch = e.changedTouches[0];
+    67→    const deltaX = touch.clientX - this.startX;
+    68→    const deltaY = touch.clientY - this.startY;
+    69→    const absX = Math.abs(deltaX);
+    70→    const absY = Math.abs(deltaY);
+    71→    
+    72→    if (absY > this.MAX_VERTICAL_DRIFT && absY > absX) {
+    73→      this.shouldSwitch = false;
+    74→      return;
+    75→    }
+    76→    
+    77→    if (absY > 0 && absX / absY < 2) {
+    78→      this.shouldSwitch = false;
+    79→      return;
+    80→    }
+    81→    
+    82→    if (absX > 15 && e.target.closest('.quick-category-slider, .icon-slider')) {
+    83→      this.shouldSwitch = false;
+    84→    }
+    85→  }
+    86→  
+    87→  onTouchEnd(e) {
+    88→    if (!this.isTracking || !this.shouldSwitch) {
+    89→      this.isTracking = false;
+    90→      return;
+    91→    }
+    92→    
+    93→    const touch = e.changedTouches[0];
+    94→    const deltaX = touch.clientX - this.startX;
+    95→    const deltaTime = performance.now() - this.startTime;
+    96→    const absX = Math.abs(deltaX);
+    97→    const velocity = absX / deltaTime;
+    98→    
+    99→    this.isTracking = false;
+   100→    
+   101→    const isSwipe = (absX > this.SWIPE_THRESHOLD && velocity > this.VELOCITY_THRESHOLD) || absX > this.SWIPE_THRESHOLD * 2.5;
+   102→    if (!isSwipe) return;
+   103→    
+   104→    const direction = deltaX > 0 ? -1 : 1;
+   105→    const newIndex = this.currentTabIndex + direction;
+   106→    
+   107→    if (newIndex >= 0 && newIndex < this.tabs.length) {
+   108→      this.currentTabIndex = newIndex;
+   109→      this.onSwipe(this.tabs[newIndex], direction);
+   110→    }
+   111→  }
+   112→  
+   113→  setTabIndex(index) {
+   114→    this.currentTabIndex = index;
+   115→  }
+   116→}
+   117→
+   118→class NavigationStack {
+   119→  constructor(tabs) {
+   120→    this.tabs = tabs;
+   121→    this.stack = ['home'];
+   122→    this.isProcessing = false;
+   123→    this.exitTimer = null;
+   124→    
+   125→    history.replaceState({ tab: 'home', id: Date.now() }, '', '#home');
+   126→    window.addEventListener('popstate', this.onPopState.bind(this));
+   127→  }
+   128→  
+   129→  push(tabId) {
+   130→    if (this.stack[this.stack.length - 1] === tabId) return;
+   131→    this.stack.push(tabId);
+   132→    history.pushState({ tab: tabId, id: Date.now() }, '', `#${tabId}`);
+   133→  }
+   134→  
+   135→  onPopState(e) {
+   136→    if (this.isProcessing) return;
+   137→    
+   138→    const openSheet = document.querySelector('.sheet-overlay.open');
+   139→    if (openSheet) {
+   140→      e.preventDefault();
+   141→      this.preventExit();
+   142→      openSheet.classList.remove('open');
+   143→      document.querySelectorAll('.bottom-sheet').forEach(s => s.style.transform = '');
+   144→      return;
+   145→    }
+   146→    
+   147→    if (typeof isMultiSelectMode !== 'undefined' && isMultiSelectMode) {
+   148→      e.preventDefault();
+   149→      this.preventExit();
+   150→      exitMultiSelect();
+   151→      return;
+   152→    }
+   153→    
+   154→    if (this.stack.length > 1) {
+   155→      e.preventDefault();
+   156→      this.stack.pop();
+   157→      const prevTab = this.stack[this.stack.length - 1];
+   158→      const navEl = document.querySelector(`.nav-item[data-tab="${prevTab}"]`);
+   159→      if (navEl) {
+   160→        this.isProcessing = true;
+   161→        switchTab(prevTab, navEl);
+   162→        this.isProcessing = false;
+   163→      }
+   164→    } else {
+   165→      this.showExitConfirm();
+   166→    }
+   167→  }
+   168→  
+   169→  preventExit() {
+   170→    const current = this.stack[this.stack.length - 1];
+   171→    history.pushState({ tab: current, id: Date.now() }, '', `#${current}`);
+   172→  }
+   173→  
+   174→  showExitConfirm() {
+   175→    if (this.exitTimer) return;
+   176→    showToast('Press back again to exit');
+   177→    this.exitTimer = setTimeout(() => {
+   178→      this.exitTimer = null;
+   179→    }, 2000);
+   180→  }
+   181→}
+   182→
+   183→class SheetGestureManager {
+   184→  constructor(sheetId, overlayId, onClose) {
+   185→    this.sheet = document.getElementById(sheetId);
+   186→    this.overlay = document.getElementById(overlayId);
+   187→    this.onClose = onClose;
+   188→    this.startY = 0;
+   189→    this.currentY = 0;
+   190→    this.isDragging = false;
+   191→    
+   192→    if (!this.sheet || !this.overlay) return;
+   193→
+   194→    this.sheet.addEventListener('touchstart', this.onStart.bind(this), { passive: true });
+   195→    this.sheet.addEventListener('touchmove', this.onMove.bind(this), { passive: false });
+   196→    this.sheet.addEventListener('touchend', this.onEnd.bind(this), { passive: true });
+   197→    
+   198→    this.overlay.addEventListener('click', (e) => {
+   199→      if (e.target === this.overlay) this.close();
+   200→    });
+   201→  }
+   202→  
+   203→  onStart(e) {
+   204→    const isHandle = e.target.closest('.sheet-handle');
+   205→    const isTopArea = e.target === this.sheet || e.target.closest('.bottom-sheet');
+   206→    const isScrolledToTop = this.sheet.scrollTop <= 0;
+   207→    
+   208→    if ((isHandle || (isTopArea && isScrolledToTop))) {
+   209→      this.startY = e.touches[0].clientY;
+   210→      this.isDragging = true;
+   211→      this.sheet.style.transition = 'none';
+   212→    }
+   213→  }
+   214→  
+   215→  onMove(e) {
+   216→    if (!this.isDragging) return;
+   217→    e.preventDefault();
+   218→    this.currentY = e.touches[0].clientY - this.startY;
+   219→    if (this.currentY > 0) {
+   220→      this.sheet.style.transform = `translateY(${this.currentY}px)`;
+   221→      this.overlay.style.opacity = 1 - (this.currentY / 400);
+   222→    }
+   223→  }
+   224→  
+   225→  onEnd() {
+   226→    if (!this.isDragging) return;
+   227→    this.isDragging = false;
+   228→    this.sheet.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
+   229→    this.overlay.style.transition = 'opacity 0.35s ease';
+   230→    
+   231→    if (this.currentY > 120) {
+   232→      this.close();
+   233→    } else {
+   234→      this.sheet.style.transform = '';
+   235→      this.overlay.style.opacity = '';
+   236→    }
+   237→    this.currentY = 0;
+   238→  }
+   239→  
+   240→  close() {
+   241→    this.sheet.style.transform = 'translateY(100%)';
+   242→    this.overlay.style.opacity = '0';
+   243→    setTimeout(() => {
+   244→      this.overlay.classList.remove('open');
+   245→      this.sheet.style.transform = '';
+   246→      this.overlay.style.opacity = '';
+   247→      if (this.onClose) this.onClose();
+   248→    }, 350);
+   249→  }
+   250→}
+   251→
+   252→let gestureManager;
+   253→let navStack;
+   254→
+   255→document.addEventListener('keydown', (e) => {
+   256→  if (e.key === 'Escape') {
+   257→    const openSheet = document.querySelector('.sheet-overlay.open');
+   258→    if (openSheet) {
+   259→      openSheet.classList.remove('open');
+   260→      e.preventDefault();
+   261→      return;
+   262→    }
+   263→    if (typeof isMultiSelectMode !== 'undefined' && isMultiSelectMode) {
+   264→      exitMultiSelect();
+   265→      e.preventDefault();
+   266→      return;
+   267→    }
+   268→  }
+   269→  
+   270→  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+   271→    const tabs = ['home', 'reports', 'settings'];
+   272→    const currentIdx = tabs.indexOf(typeof currentTab !== 'undefined' ? currentTab : 'home');
+   273→    const direction = e.key === 'ArrowRight' ? 1 : -1;
+   274→    const newIdx = currentIdx + direction;
+   275→    
+   276→    if (newIdx >= 0 && newIdx < tabs.length) {
+   277→      const navEl = document.querySelector(`.nav-item[data-tab="${tabs[newIdx]}"]`);
+   278→      if (navEl) {
+   279→        switchTab(tabs[newIdx], navEl);
+   280→        if (typeof navStack !== 'undefined') navStack.push(tabs[newIdx]);
+   281→        if (typeof gestureManager !== 'undefined') gestureManager.setTabIndex(newIdx);
+   282→      }
+   283→      e.preventDefault();
+   284→    }
+   285→  }
+   286→});
+   287→
+   288→document.body.addEventListener('touchmove', function(e) {
+   289→  if (e.target === document.body || e.target === document.querySelector('.app-container')) {
+   290→    e.preventDefault();
+   291→  }
+   292→}, { passive: false });
+   293→
+   294→const db = new Dexie('PocketPulseDB');
+   295→
+   296→// v1: original schema (amounts stored as floats, e.g. 50.0)
+   297→db.version(1).stores({
+   298→  transactions: '++id, date, amount, type, category',
+   299→  settings: 'id'
+   300→});
+   301→
+   302→// v2: one-time migration — multiply all existing amounts × 100 → paise
+   303→db.version(2).stores({
+   304→  transactions: '++id, date, amount, type, category',
+   305→  settings: 'id'
+   306→}).upgrade(tx =>
+   307→  tx.table('transactions').toCollection().modify(t => {
+   308→    t.amount = Math.round(t.amount * 100);
+   309→  })
+   310→);
+   311→
+   312→// v3: compound indexes for efficient period+type queries
+   313→db.version(3).stores({
+   314→  transactions: '++id, date, [type+date], [category+date], amount',
+   315→  settings: 'id'
+   316→});
+   317→
+   318→// v4: reportCache for offline report rendering
+   319→db.version(4).stores({
+   320→  transactions: '++id, date, [type+date], [category+date], amount',
+   321→  settings: 'id',
+   322→  reportCache: 'id'
+   323→});
+   324→
+   325→// ── Settings helpers ──────────────────────────────────────────
+   326→async function saveSetting(key, value) {
+   327→  return db.settings.put({ id: key, value }).catch(e => console.error('saveSetting:', e));
+   328→}
+   329→async function getSetting(key, defaultValue) {
+   330→  const rec = await db.settings.get(key).catch(() => null);
+   331→  return rec != null ? rec.value : defaultValue;
+   332→}
+   333→
+   334→// ── Transaction DB helpers ────────────────────────────────────
+   335→function addTransactionToDB(t) {
+   336→  return db.transactions.add(t).catch(e => { console.error('addTx:', e); throw e; });
+   337→}
+   338→
+   339→/** Get transactions for a given date range (for reports and hero card) */
+   340→function getTxInRange(fromDate, toDate = Date.now()) {
+   341→  return db.transactions
+   342→    .where('date')
+   343→    .between(fromDate, toDate, true, true)
+   344→    .reverse()
+   345→    .toArray()
+   346→    .catch(e => { console.error('getTxInRange:', e); return []; });
+   347→}
+   348→
+   349→/** Get paginated history (most recent first) */
+   350→function getTxPage(offset = 0, limit = 15) {
+   351→  return db.transactions
+   352→    .orderBy('date')
+   353→    .reverse()
+   354→    .offset(offset)
+   355→    .limit(limit)
+   356→    .toArray()
+   357→    .catch(e => { console.error('getTxPage:', e); return []; });
+   358→}
+   359→
+   360→/** Count total transactions (for pagination UI) */
+   361→function countTx() {
+   362→  return db.transactions.count().catch(() => 0);
+   363→}
+   364→
+   365→/** Get aggregates for reports (sum spend/earn in range) */
+   366→async function getAggregatesInRange(fromDate, toDate = Date.now()) {
+   367→  const txs = await getTxInRange(fromDate, toDate);
+   368→  let spendPaise = 0, earnPaise = 0;
+   369→  txs.forEach(t => {
+   370→    if (t.type === 'spend') spendPaise += t.amount;
+   371→    else earnPaise += t.amount;
+   372→  });
+   373→  return { spendPaise, earnPaise, txs };
+   374→}
+   375→
+   376→// ============================================================
+   377→// CURRENCY — Base-100 integer math
+   378→// ============================================================
+   379→/** Convert display ₹ value → paise integer. e.g. 10.5 → 1050 */
+   380→function toPaise(val) {
+   381→  return Math.round(parseFloat(val || 0) * 100);
+   382→}
+   383→/** Format paise → display string. e.g. 5000 → "50", 1050 → "50.50" */
+   384→function fmtAmt(paise) {
+   385→  const rupees = paise / 100;
+   386→  return Number.isInteger(rupees)
+   387→    ? rupees.toLocaleString()
+   388→    : new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(rupees);
+   389→}
+   390→
+   391→// ============================================================
+   392→// STATE
+   393→// ============================================================
+   394→let weeklyBudget    = 3000;  // stored in ₹ (display value)
+   395→let expectedEarnings = 8000; // stored in ₹ (display value)
+   396→let currentVisibleTxs = [];
+   397→let currentTab = 'home';
+   398→let isMultiSelectMode = false;
+   399→let selectedTxIds = new Set();
+   400→let recentlyDeletedTxs = [];
+   401→let longPressTimer = null;
+   402→let swipeStartX = 0;
+   403→let swipeCurrentX = 0;
+   404→let isSwiping = false;
+   405→
+   406→// Pagination state
+   407→let historyPage = 0;
+   408→const HISTORY_PAGE_SIZE = 15;
+   409→let historyTotalCount = 0;
+   410→let isLoadingHistory = false;
+   411→
+   412→// Concurrency guard
+   413→let isUpdatingState = false;
+   414→
+   415→// Hero counter animation state
+   416→let previousSpendPaise = 0;
+   417→
+   418→// ============================================================
+   419→// TAB SWITCHING — Animated directional slide
+   420→// ============================================================
+   421→function switchTab(tabId, el) {
+   422→  const current = document.querySelector('.tab-content.active');
+   423→  const next = document.getElementById('tab-' + tabId);
+   424→  if (!next || current === next) return;
+   425→
+   426→  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+   427→  if (el) el.classList.add('active');
+   428→  
+   429→  currentTab = tabId;
+   430→
+   431→  const tabs = ['home', 'reports', 'settings'];
+   432→  const fromIdx = tabs.indexOf(current.id.replace('tab-', ''));
+   433→  const toIdx = tabs.indexOf(tabId);
+   434→  const dir = toIdx > fromIdx ? 1 : -1;
+   435→
+   436→  next.classList.remove('swipe-enter-left', 'swipe-enter-right');
+   437→  next.classList.add(dir === 1 ? 'swipe-enter-right' : 'swipe-enter-left');
+   438→
+   439→  current.classList.remove('active');
+   440→  
+   441→  void next.offsetWidth; // Force reflow
+   442→  
+   443→  next.classList.add('active');
+   444→  next.classList.remove('swipe-enter-left', 'swipe-enter-right');
+   445→  
+   446→  updateState();
+   447→
+   448→  // Scroll to top when switching to Home
+   449→  if (tabId === 'home') {
+   450→    setTimeout(() => {
+   451→      document.getElementById('tab-home')?.scrollTo({ top: 0, behavior: 'smooth' });
+   452→    }, 250);
+   453→  }
+   454→}
+   455→
+   456→// ── Accent theme ──────────────────────────────────────────────
+   457→function setTheme(el, hex, save = true) {
+   458→  document.querySelectorAll('.dot').forEach(d => {
+   459→    d.classList.toggle('selected', d.dataset.color === hex);
+   460→  });
+   461→  document.documentElement.style.setProperty('--accent', hex);
+   462→  const h = hex.replace('#', '');
+   463→  const r = parseInt(h.substring(0,2), 16), g = parseInt(h.substring(2,4), 16), b = parseInt(h.substring(4,6), 16);
+   464→  const isLight = ((r*299)+(g*587)+(b*114))/1000 > 128;
+   465→  document.documentElement.style.setProperty('--solid-text-color', isLight ? '#000000' : '#FFFFFF');
+   466→  document.documentElement.style.setProperty('--solid-log-bg',    isLight ? '#000000' : '#FFFFFF');
+   467→  if (save) saveSetting('accentColor', hex);
+   468→}
+   469→
+   470→async function wipeData() {
+   471→  if (!confirm('Are you sure you want to wipe all data? This cannot be undone.')) return;
+   472→  try {
+   473→    await db.transactions.clear();
+   474→    await db.settings.clear();
+   475→    showToast('All data wiped!');
+   476→    setTimeout(() => location.reload(), 1000);
+   477→  } catch (e) { console.error(e); showToast('Error wiping data'); }
+   478→}
+   479→
+   480→// ============================================================
+   481→// NUMPAD  (acc & tapHistory stored in PAISE)
+   482→// ============================================================
+   483→let acc = 0;          // running total — PAISE
+   484→let tapHistory = [];  // per-tap paise values
+   485→let numpadValues = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]; // display ₹ denominations
+   486→let globalReportPeriod = 'weekly';
+   487→let currencySymbol = '₹';
+   488→let appTheme = 'glass';
+   489→
+   490→const CATEGORIES = [
+   491→  { id: 'zap',               name: 'General'  },
+   492→  { id: 'utensils',          name: 'Food'     },
+   493→  { id: 'car',               name: 'Transport'},
+   494→  { id: 'shopping-bag',      name: 'Shopping' },
+   495→  { id: 'lightbulb',         name: 'Bills'    },
+   496→  { id: 'heart-pulse',       name: 'Health'   },
+   497→  { id: 'circle-dollar-sign',name: 'Salary'   },
+   498→  { id: 'clapperboard',      name: 'Ent.'     }
+   499→];
+   500→let selectedHomeCategory = CATEGORIES[0];
+   501→
+   502→function renderHomeCategories() {
+   503→  const slider = document.getElementById('quick-category-slider');
+   504→  slider.innerHTML = '';
+   505→  CATEGORIES.forEach(cat => {
+   506→    const item = document.createElement('div');
+   507→    item.className = 'qc-item' + (selectedHomeCategory.id === cat.id ? ' active' : '');
+   508→    item.onclick = () => { if(navigator.vibrate) navigator.vibrate(20); selectedHomeCategory = cat; renderHomeCategories(); };
+   509→    item.innerHTML = `<i data-lucide="${sanitize(cat.id)}" class="qc-icon"></i>`;
+   510→    slider.appendChild(item);
+   511→  });
+   512→  lucide.createIcons({ nodes: [slider] });
+   513→}
+   514→
+   515→async function updateNumpadValues(newArray) {
+   516→  numpadValues = newArray;
+   517→  await saveSetting('numpadValues', numpadValues);
+   518→}
+   519→
+   520→function renderNumpad() {
+   521→  const grid = document.getElementById('numpad-grid');
+   522→  grid.innerHTML = '';
+   523→  numpadValues.forEach(val => {
+   524→    const displayVal = val >= 1000 ? (val / 1000) + 'K' : val;
+   525→    const btn = document.createElement('button');
+   526→    btn.className = 'np-btn';
+   527→    btn.innerText = displayVal;
+   528→    btn.onclick = () => { if(navigator.vibrate) navigator.vibrate(50); addNum(val); };
+   529→    grid.appendChild(btn);
+   530→  });
+   531→}
+   532→
+   533→function renderSettingsNumpad() {
+   534→  const grid = document.getElementById('numpad-settings-grid');
+   535→  grid.innerHTML = '';
+   536→  numpadValues.forEach((val, i) => {
+   537→    const input = document.createElement('input');
+   538→    input.type = 'number'; input.className = 'np-input'; input.value = val; input.min = '1'; input.step = '1';
+   539→    input.addEventListener('blur', e => {
+   540→      let newVal = parseInt(e.target.value);
+   541→      if (isNaN(newVal) || newVal <= 0) newVal = 1;
+   542→      e.target.value = newVal; numpadValues[i] = newVal; updateNumpadValues(numpadValues); renderNumpad();
+   543→    });
+   544→    grid.appendChild(input);
+   545→  });
+   546→}
+   547→
+   548→function updateAccDisplay() {
+   549→  const display = document.getElementById('np-display');
+   550→  if (acc === 0) {
+   551→    display.innerText = 'Tap a number...'; display.style.opacity = '0.5';
+   552→  } else {
+   553→    const histDisplay = tapHistory.map(p => fmtAmt(p)).join(' + ');
+   554→    display.innerText = tapHistory.length > 1
+   555→      ? `${histDisplay} = ${currencySymbol}${fmtAmt(acc)}`
+   556→      : `${currencySymbol}${fmtAmt(acc)}`;
+   557→    display.style.opacity = '1';
+   558→  }
+   559→}
+   560→
+   561→/** val is a display ₹ denomination (e.g. 50). Convert to paise before storing. */
+   562→function addNum(val) {
+   563→  const paise = toPaise(val);
+   564→  acc += paise;
+   565→  tapHistory.push(paise);
+   566→  updateAccDisplay();
+   567→  // Flash the display
+   568→  const display = document.getElementById('np-display');
+   569→  display.style.transform = 'scale(1.04)';
+   570→  setTimeout(() => {
+   571→    display.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+   572→    display.style.transform = 'scale(1)';
+   573→  }, 0);
+   574→}
+   575→
+   576→function undoTap() {
+   577→  if (tapHistory.length === 0) return showToast('Nothing to undo');
+   578→  acc -= tapHistory.pop();
+   579→  updateAccDisplay();
+   580→}
+   581→
+   582→function clearNum() { acc = 0; tapHistory = []; updateAccDisplay(); }
+   583→
+   584→async function logTransaction() {
+   585→  if (acc === 0) return showToast('Tap a number to log!');
+   586→  const transaction = {
+   587→    amount: acc,  // PAISE
+   588→    type: 'spend',
+   589→    category: selectedHomeCategory.name,
+   590→    note: selectedHomeCategory.name === 'General' ? 'Quick Log' : selectedHomeCategory.name,
+   591→    icon: selectedHomeCategory.id,
+   592→    date: Date.now()
+   593→  };
+   594→  try {
+   595→    await addTransactionToDB(transaction);
+   596→    // Pulse animation on hero card
+   597→    const heroCard = document.querySelector('.hero-card');
+   598→    heroCard.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
+   599→    heroCard.style.transform = 'scale(1.02)';
+   600→    heroCard.style.boxShadow = '0 0 0 2px var(--accent)';
+   601→    setTimeout(() => {
+   602→      heroCard.style.transform = '';
+   603→      heroCard.style.boxShadow = '';
+   604→    }, 150);
+   605→    showToast(`✓ Logged ${currencySymbol}${fmtAmt(acc)}`);
+   606→    clearNum();
+   607→    updateState();
+   608→  } catch (err) { console.error(err); showToast('Error logging transaction'); }
+   609→}
+   610→
+   611→// ============================================================
+   612→// PERIOD CONFIG — determines date range for queries
+   613→// ============================================================
+   614→function getPeriodConfig() {
+   615→  const now = new Date();
+   616→  switch (globalReportPeriod) {
+   617→    case 'weekly': {
+   618→      const dayOfWeek = now.getDay(); // 0=Sun
+   619→      const monday = new Date(now);
+   620→      monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
+   621→      monday.setHours(0, 0, 0, 0);
+   622→      return { fromDate: monday.getTime(), label: "THIS WEEK'S SPEND", limitLabel: 'Weekly Max Limit', budgetMultiplier: 1 };
+   623→    }
+   624→    case 'monthly':
+   625→      return {
+   626→        fromDate: new Date(now.getFullYear(), now.getMonth(), 1).getTime(),
+   627→        label: "THIS MONTH'S SPEND", limitLabel: 'Monthly Max Limit', budgetMultiplier: 4.33
+   628→      };
+   629→    case 'yearly':
+   630→      return {
+   631→        fromDate: new Date(now.getFullYear(), 0, 1).getTime(),
+   632→        label: "THIS YEAR'S SPEND", limitLabel: 'Yearly Max Limit', budgetMultiplier: 52
+   633→      };
+   634→    default: // 'all'
+   635→      return { fromDate: 0, label: 'ALL TIME SPEND', limitLabel: 'All Time Max Limit', budgetMultiplier: 1 };
+   636→  }
+   637→}
+   638→
+   639→// ============================================================
+   640→// CORE UI UPDATES
+   641→// ============================================================
+   642→async function updateState() {
+   643→  if (isUpdatingState) return;
+   644→  isUpdatingState = true;
+   645→  try {
+   646→    const { fromDate, label, limitLabel, budgetMultiplier } = getPeriodConfig();
+   647→
+   648→    let aggs;
+   649→    if (!navigator.onLine) {
+   650→      const cached = await db.reportCache.get(globalReportPeriod);
+   651→      aggs = cached ? cached.data : { spendPaise: 0, earnPaise: 0, txs: [] };
+   652→    } else {
+   653→      aggs = await getAggregatesInRange(fromDate);
+   654→      await db.reportCache.put({ id: globalReportPeriod, data: aggs });
+   655→    }
+   656→    const { spendPaise, earnPaise, txs } = aggs;
+   657→
+   658→    if (currentTab === 'home') {
+   659→      document.getElementById('hero-period-label').textContent = label;
+   660→      updateHeroCard(spendPaise, budgetMultiplier, label);
+   661→      await renderHistory(true); // Reset and load page 1
+   662→    } else if (currentTab === 'reports') {
+   663→      updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, limitLabel);
+   664→    }
+   665→  } finally {
+   666→    isUpdatingState = false;
+   667→  }
+   668→}
+   669→
+   670→// ── Hero Card ─────────────────────────────────────────────────
+   671→function animateCounter(element, fromPaise, toPaise_target, duration = 400) {
+   672→  const startTime = performance.now();
+   673→
+   674→  function update(currentTime) {
+   675→    const elapsed = currentTime - startTime;
+   676→    const progress = Math.min(elapsed / duration, 1);
+   677→    // Ease out cubic
+   678→    const eased = 1 - Math.pow(1 - progress, 3);
+   679→    const current = Math.round(fromPaise + (toPaise_target - fromPaise) * eased);
+   680→    element.innerHTML = `<span class="hero-currency">${currencySymbol}</span>${fmtAmt(current)}`;
+   681→    if (progress < 1) requestAnimationFrame(update);
+   682→  }
+   683→  requestAnimationFrame(update);
+   684→}
+   685→
+   686→function updateHeroCard(spendPaise, budgetMultiplier, label) {
+   687→  const heroEl = document.getElementById('hero-total');
+   688→  animateCounter(heroEl, previousSpendPaise, spendPaise);
+   689→  previousSpendPaise = spendPaise;
+   690→
+   691→  const currentBudget = weeklyBudget * budgetMultiplier;
+   692→  const spendRupees = spendPaise / 100;
+   693→  const pct = Math.min((spendRupees / currentBudget) * 100, 100) || 0;
+   694→
+   695→  document.getElementById('hero-progress').style.transform = `scaleX(${pct / 100})`;
+   696→  document.getElementById('hero-progress').style.background = pct >= 100
+   697→    ? 'var(--text)'
+   698→    : 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent))';
+   699→  document.getElementById('hero-limit-display').textContent = `${currencySymbol}${Math.round(currentBudget).toLocaleString()}`;
+   700→
+   701→  // Hide budget bar and limit for "all" period
+   702→  const budgetInfo = document.querySelector('.hero-budget-info');
+   703→  const budgetBar = document.querySelector('.hero-budget-bar');
+   704→  if (budgetInfo) budgetInfo.style.display = globalReportPeriod === 'all' ? 'none' : '';
+   705→  if (budgetBar) budgetBar.style.display = globalReportPeriod === 'all' ? 'none' : '';
+   706→}
+   707→
+   708→// ── Reports Tab ───────────────────────────────────────────────
+   709→function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, limitLabel) {
+   710→  const surplusPaise = earnPaise - spendPaise;
+   711→  const spendRupees = spendPaise / 100;
+   712→  const safeToSpend = Math.max(0, (weeklyBudget * budgetMultiplier) - spendRupees);
+   713→
+   714→  document.getElementById('report-spent').textContent  = `${currencySymbol}${fmtAmt(spendPaise)}`;
+   715→  document.getElementById('report-earned').textContent = `${currencySymbol}${fmtAmt(earnPaise)}`;
+   716→
+   717→  const reportSurplus = document.getElementById('report-surplus');
+   718→  reportSurplus.textContent = `${surplusPaise < 0 ? '-' : ''}${currencySymbol}${fmtAmt(Math.abs(surplusPaise))}`;
+   719→  reportSurplus.style.color = surplusPaise < 0 ? 'var(--spend-color)' : surplusPaise > 0 ? 'var(--earn-color)' : 'var(--text)';
+   720→
+   721→  document.getElementById('report-safe').textContent = `Safe to spend: ${currencySymbol}${Math.round(safeToSpend).toLocaleString()}`;
+   722→  document.getElementById('limit-label').textContent = limitLabel;
+   723→
+   724→  // Rebuild trend chart with period-aware buckets
+   725→  renderTrendBox(txs, globalReportPeriod);
+   726→
+   727→  // Rebuild category breakdown
+   728→  const categoryTotals = {};
+   729→  txs.filter(t => t.type === 'spend').forEach(t => {
+   730→    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+   731→  });
+   732→  renderCategoryBreakdown(categoryTotals, spendPaise);
+   733→}
+   734→
+   735→// ============================================================
+   736→// TREND CHART — Period-aware buckets
+   737→// ============================================================
+   738→function renderTrendBox(txs, period) {
+   739→  const trendBox = document.getElementById('trend-box');
+   740→  if (!trendBox) return;
+   741→
+   742→  const spendTxs = txs.filter(t => t.type === 'spend');
+   743→  if (spendTxs.length === 0) {
+   744→    trendBox.innerHTML = '<div class="empty-state-small">No spending data for this period</div>';
+   745→    return;
+   746→  }
+   747→  
+   748→  if (trendBox.querySelector('.empty-state-small')) {
+   749→    trendBox.innerHTML = '';
+   750→  }
+   751→
+   752→  let buckets, labels;
+   753→  const now = new Date();
+   754→
+   755→  if (period === 'weekly') {
+   756→    buckets = Array(7).fill(0);
+   757→    labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+   758→    const today = new Date(); today.setHours(0,0,0,0);
+   759→    const dayOfWeek = (today.getDay() + 6) % 7; 
+   760→    const weekStart = new Date(today); weekStart.setDate(today.getDate() - dayOfWeek);
+   761→
+   762→    spendTxs.forEach(t => {
+   763→      const tDate = new Date(t.date); tDate.setHours(0,0,0,0);
+   764→      const diff = Math.floor((tDate - weekStart) / 86400000);
+   765→      if (diff >= 0 && diff < 7) buckets[diff] += t.amount;
+   766→    });
+   767→
+   768→  } else if (period === 'monthly') {
+   769→    buckets = Array(4).fill(0);
+   770→    labels = ['W1','W2','W3','W4'];
+   771→    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+   772→    spendTxs.filter(t => t.date >= monthStart).forEach(t => {
+   773→      const weekIdx = Math.min(3, Math.floor((t.date - monthStart) / (7 * 86400000)));
+   774→      buckets[weekIdx] += t.amount;
+   775→    });
+   776→
+   777→  } else if (period === 'yearly') {
+   778→    buckets = Array(12).fill(0);
+   779→    labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+   780→    spendTxs.forEach(t => {
+   781→      const month = new Date(t.date).getMonth();
+   782→      buckets[month] += t.amount;
+   783→    });
+   784→
+   785→  } else {
+   786→    // All time — Dynamic Year grouping
+   787→    const years = [...new Set(spendTxs.map(t => new Date(t.date).getFullYear()))].sort();
+   788→    if (years.length === 0) {
+   789→      buckets = [0]; labels = [now.getFullYear().toString()];
+   790→    } else {
+   791→      buckets = Array(years.length).fill(0);
+   792→      labels = years.map(y => y.toString().substring(2)); // e.g. '24'
+   793→      spendTxs.forEach(t => {
+   794→        const year = new Date(t.date).getFullYear();
+   795→        const idx = years.indexOf(year);
+   796→        buckets[idx] += t.amount;
+   797→      });
+   798→    }
+   799→  }
+   800→
+   801→  const maxVal = Math.max(...buckets, 1);
+   802→  const todayBucketIdx = period === 'weekly' ? (now.getDay() + 6) % 7 : -1;
+   803→
+   804→  // DOM POOLING
+   805→  const requiredCount = buckets.length;
+   806→  while (trendBox.children.length > requiredCount) {
+   807→    trendBox.removeChild(trendBox.lastChild);
+   808→  }
+   809→  while (trendBox.children.length < requiredCount) {
+   810→    const col = document.createElement('div');
+   811→    col.className = 'trend-col';
+   812→    const bar = document.createElement('div');
+   813→    const labelEl = document.createElement('div');
+   814→    labelEl.className = 'trend-label';
+   815→    col.appendChild(bar);
+   816→    col.appendChild(labelEl);
+   817→    trendBox.appendChild(col);
+   818→  }
+   819→
+   820→  buckets.forEach((val, i) => {
+   821→    const col = trendBox.children[i];
+   822→    const bar = col.firstChild;
+   823→    const labelEl = col.lastChild;
+   824→
+   825→    bar.className = 'trend-bar' + (i === todayBucketIdx ? ' active' : '');
+   826→    const heightPct = Math.max((val / maxVal) * 100, 4);
+   827→    
+   828→    labelEl.textContent = labels[i] || '';
+   829→
+   830→    if (val > 0) {
+   831→      bar.title = `${currencySymbol}${fmtAmt(val)}`;
+   832→      bar.setAttribute('data-value', fmtAmt(val));
+   833→      bar.setAttribute('data-has-value', '1');
+   834→    } else {
+   835→      bar.removeAttribute('title');
+   836→      bar.removeAttribute('data-value');
+   837→      bar.removeAttribute('data-has-value');
+   838→    }
+   839→
+   840→    requestAnimationFrame(() => {
+   841→      setTimeout(() => {
+   842→        bar.style.transition = 'height 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+   843→        bar.style.height = heightPct + '%';
+   844→      }, i * 40);
+   845→    });
+   846→  });
+   847→}
+   848→
+   849→// ============================================================
+   850→// CATEGORY BREAKDOWN
+   851→// ============================================================
+   852→const FALLBACK_ICONS = {
+   853→  'Freelance': 'briefcase',
+   854→  'Investment': 'trending-up',
+   855→  'Side Hustle': 'rocket'
+   856→};
+   857→
+   858→function hashString(str) {
+   859→  return str.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+   860→}
+   861→
+   862→function renderCategoryBreakdown(categoryTotals, totalSpendPaise) {
+   863→  const container = document.getElementById('category-breakdown');
+   864→  if (!container) return;
+   865→  container.innerHTML = '';
+   866→
+   867→  const sorted = Object.entries(categoryTotals)
+   868→    .sort((a, b) => b[1] - a[1])
+   869→    .slice(0, 6);
+   870→
+   871→  if (sorted.length === 0) {
+   872→    container.innerHTML = '<div class="empty-state-small">No spend data for this period</div>';
+   873→    return;
+   874→  }
+   875→
+   876→  const fragment = document.createDocumentFragment();
+   877→  sorted.forEach(([category, paise], i) => {
+   878→    const pct = totalSpendPaise > 0 ? (paise / totalSpendPaise * 100) : 0;
+   879→    
+   880→    let catIcon = 'circle-help';
+   881→    const foundCat = CATEGORIES.find(c => c.name === category);
+   882→    if (foundCat) {
+   883→      catIcon = foundCat.id;
+   884→    } else if (FALLBACK_ICONS[category]) {
+   885→      catIcon = FALLBACK_ICONS[category];
+   886→    } else {
+   887→      console.warn('Unknown category:', category);
+   888→    }
+   889→
+   890→    const row = document.createElement('div');
+   891→    row.className = 'cat-row';
+   892→
+   893→    const label = document.createElement('div');
+   894→    label.className = 'cat-label';
+   895→
+   896→    const iconSpan = document.createElement('i');
+   897→    iconSpan.setAttribute('data-lucide', catIcon);
+   898→    iconSpan.style.width = '14px';
+   899→    iconSpan.style.height = '14px';
+   900→
+   901→    const nameSpan = document.createElement('span');
+   902→    nameSpan.textContent = category;
+   903→
+   904→    label.appendChild(iconSpan);
+   905→    label.appendChild(nameSpan);
+   906→
+   907→    const bar = document.createElement('div');
+   908→    bar.className = 'cat-bar-track';
+   909→    const fill = document.createElement('div');
+   910→    fill.className = 'cat-bar-fill';
+   911→    fill.style.transform = 'scaleX(0)';
+   912→    fill.style.backgroundColor = `hsl(${hashString(category)}, 70%, 65%)`; // Security 1
+   913→    bar.appendChild(fill);
+   914→
+   915→    const pctLabel = document.createElement('div');
+   916→    pctLabel.className = 'cat-pct';
+   917→    pctLabel.textContent = pct.toFixed(0) + '%';
+   918→
+   919→    row.appendChild(label);
+   920→    row.appendChild(bar);
+   921→    row.appendChild(pctLabel);
+   922→    fragment.appendChild(row);
+   923→
+   924→    requestAnimationFrame(() => {
+   925→      setTimeout(() => {
+   926→        fill.style.transition = 'transform 0.7s cubic-bezier(0.34, 1.1, 0.64, 1)';
+   927→        fill.style.transform = `scaleX(${pct / 100})`;
+   928→      }, i * 60);
+   929→    });
+   930→  });
+   931→
+   932→  container.appendChild(fragment);
+   933→  lucide.createIcons({ nodes: [container] });
+   934→}
+   935→
+   936→// ============================================================
+   937→// HISTORY — Paginated + Secure Card Builder
+   938→// ============================================================
+   939→
+   940→/** Build a single transaction card using safe DOM APIs (no innerHTML with user data) */
+   941→function buildTxCard(t) {
+   942→  const isSpend = t.type === 'spend';
+   943→  const icon = sanitize(t.icon || (isSpend ? 'zap' : 'circle-dollar-sign'));
+   944→  const colorClass = isSpend ? 'spend' : 'earn';
+   945→  const sign = isSpend ? `-${currencySymbol}` : `+${currencySymbol}`;
+   946→  const bg = isSpend
+   947→    ? 'color-mix(in srgb, var(--spend-color) 15%, transparent)'
+   948→    : 'color-mix(in srgb, var(--earn-color) 15%, transparent)';
+   949→  const iconColor = isSpend ? 'var(--spend-color)' : 'var(--earn-color)';
+   950→
+   951→  const wrapper = document.createElement('div');
+   952→  wrapper.className = 'entry-card-wrapper';
+   953→  wrapper.id = `tx-${t.id}`;
+   954→
+   955→  const deleteBg = document.createElement('div');
+   956→  deleteBg.className = 'delete-bg';
+   957→  deleteBg.style.opacity = '0';
+   958→  deleteBg.innerHTML = '<i data-lucide="trash-2"></i>';
+   959→
+   960→  const card = document.createElement('div');
+   961→  card.className = `entry-card${selectedTxIds.has(t.id) ? ' selected' : ''}`;
+   962→  // Store all data in dataset — no inline handlers with user data
+   963→  card.dataset.txId = t.id;
+   964→  card.dataset.note = t.note || '';
+   965→  card.dataset.amount = t.amount;
+   966→  card.dataset.type = t.type;
+   967→  card.dataset.icon = t.icon || 'zap';
+   968→  card.dataset.category = t.category || 'General';
+   969→
+   970→  card.addEventListener('touchstart', (e) => handleTxTouchStart(e, t.id), { passive: true });
+   971→  card.addEventListener('touchmove',  (e) => handleTxTouchMove(e, t.id),  { passive: false });
+   972→  card.addEventListener('touchend',   (e) => handleTxTouchEnd(e, t.id));
+   973→  card.addEventListener('click',      (e) => {
+   974→    const d = card.dataset;
+   975→    handleTxClick(e, +d.txId, d.note, +d.amount, d.type, d.icon, d.category);
+   976→  });
+   977→
+   978→  const checkbox = document.createElement('div');
+   979→  checkbox.className = 'entry-checkbox';
+   980→  checkbox.innerHTML = '<i data-lucide="check" style="width:14px;height:14px;"></i>';
+   981→
+   982→  const left = document.createElement('div');
+   983→  left.className = 'entry-left';
+   984→
+   985→  const iconDiv = document.createElement('div');
+   986→  iconDiv.className = 'entry-icon';
+   987→  iconDiv.style.background = bg;
+   988→  iconDiv.style.color = iconColor;
+   989→  iconDiv.innerHTML = `<i data-lucide="${icon}"></i>`;
+   990→
+   991→  const textContainer = document.createElement('div');
+   992→  textContainer.className = 'entry-text-container';
+   993→
+   994→  const noteEl = document.createElement('div');
+   995→  noteEl.className = 'entry-note';
+   996→  noteEl.textContent = t.note || t.category; // textContent = safe
+   997→
+   998→  const timeEl = document.createElement('div');
+   999→  timeEl.className = 'entry-time';
+  1000→  timeEl.textContent = new Date(t.date).toLocaleString([], {
+  1001→    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  1002→  });
+  1003→
+  1004→  const amtEl = document.createElement('div');
+  1005→  amtEl.className = `entry-amt ${colorClass}`;
+  1006→  amtEl.textContent = `${sign}${fmtAmt(t.amount)}`;
+  1007→
+  1008→  textContainer.appendChild(noteEl);
+  1009→  textContainer.appendChild(timeEl);
+  1010→  left.appendChild(iconDiv);
+  1011→  left.appendChild(textContainer);
+  1012→  card.appendChild(checkbox);
+  1013→  card.appendChild(left);
+  1014→  card.appendChild(amtEl);
+  1015→  wrapper.appendChild(deleteBg);
+  1016→  wrapper.appendChild(card);
+  1017→
+  1018→  // Entry animation
+  1019→  wrapper.style.opacity = '0';
+  1020→  wrapper.style.transform = 'translateY(8px)';
+  1021→  requestAnimationFrame(() => {
+  1022→    wrapper.style.transition = 'opacity 0.25s ease, transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)';
+  1023→    wrapper.style.opacity = '1';
+  1024→    wrapper.style.transform = 'translateY(0)';
+  1025→  });
+  1026→
+  1027→  return wrapper;
+  1028→}
+  1029→
+  1030→/** Render paginated history */
+  1031→async function renderHistory(reset = false) {
+  1032→  const container = document.getElementById('history-container');
+  1033→
+  1034→  if (reset) {
+  1035→    historyPage = 0;
+  1036→    historyTotalCount = await countTx();
+  1037→    container.classList.add('loading');
+  1038→    // Remove skeleton on first real load
+  1039→    const skel = document.getElementById('history-skeleton');
+  1040→    if (skel) skel.remove();
+  1041→    container.innerHTML = '';
+  1042→    currentVisibleTxs = [];
+  1043→  }
+  1044→
+  1045→  if (isLoadingHistory) return;
+  1046→  isLoadingHistory = true;
+  1047→
+  1048→  const txs = await getTxPage(historyPage * HISTORY_PAGE_SIZE, HISTORY_PAGE_SIZE);
+  1049→
+  1050→  if (txs.length === 0 && historyPage === 0) {
+  1051→    container.innerHTML = '<div class="empty-state">No transactions yet.<br>Tap a number to log your first one!</div>';
+  1052→    isLoadingHistory = false;
+  1053→    container.classList.remove('loading');
+  1054→    return;
+  1055→  }
+  1056→
+  1057→  const fragment = document.createDocumentFragment();
+  1058→  txs.forEach(t => fragment.appendChild(buildTxCard(t)));
+  1059→  container.appendChild(fragment);
+  1060→  lucide.createIcons({ nodes: [container] }); // Only scan new nodes
+  1061→
+  1062→  currentVisibleTxs = [...currentVisibleTxs, ...txs];
+  1063→  historyPage++;
+  1064→  isLoadingHistory = false;
+  1065→  container.classList.remove('loading');
+  1066→
+  1067→  // Show/hide Load More button
+  1068→  const hasMore = (historyPage * HISTORY_PAGE_SIZE) < historyTotalCount;
+  1069→  let loadMoreBtn = document.getElementById('load-more-btn');
+  1070→  if (hasMore && !loadMoreBtn) {
+  1071→    loadMoreBtn = document.createElement('button');
+  1072→    loadMoreBtn.id = 'load-more-btn';
+  1073→    loadMoreBtn.className = 'load-more-btn';
+  1074→    loadMoreBtn.textContent = 'Load More';
+  1075→    loadMoreBtn.onclick = () => renderHistory(false);
+  1076→    container.after(loadMoreBtn);
+  1077→  } else if (!hasMore && loadMoreBtn) {
+  1078→    loadMoreBtn.remove();
+  1079→  }
+  1080→
+  1081→  if (isMultiSelectMode) {
+  1082→    container.classList.add('multi-select-active');
+  1083→    document.getElementById('ms-select-all').style.display = 'block';
+  1084→  } else {
+  1085→    container.classList.remove('multi-select-active');
+  1086→    document.getElementById('ms-select-all').style.display = 'none';
+  1087→  }
+  1088→}
+  1089→
+  1090→// ============================================================
+  1091→// EDIT SHEET
+  1092→// ============================================================
+  1093→let currentEditType     = 'spend';
+  1094→let currentEditId       = null;
+  1095→let currentEditIcon     = 'zap';
+  1096→let currentEditCategory = 'Quick';
+  1097→
+  1098→/** amtPaise: stored paise value — display as ₹ in input */
+  1099→function openEdit(id, note, amtPaise, type, icon, category) {
+  1100→  currentEditId = id;
+  1101→  document.getElementById('edit-note-input').value  = note === 'Quick Log' ? '' : note;
+  1102→  document.getElementById('edit-amt-input').value   = amtPaise / 100; // show display ₹
+  1103→  const toggles = document.querySelectorAll('.type-btn');
+  1104→  toggles.forEach(t => t.classList.remove('active'));
+  1105→  currentEditType = type;
+  1106→  if (type === 'spend') toggles[0].classList.add('active'); else toggles[1].classList.add('active');
+  1107→  currentEditIcon     = icon || 'zap';
+  1108→  currentEditCategory = category || 'Quick';
+  1109→  renderEditCategories();
+  1110→  updateEditDisplay();
+  1111→  document.getElementById('edit-overlay').classList.add('open');
+  1112→}
+  1113→
+  1114→function renderEditCategories() {
+  1115→  const slider = document.getElementById('edit-icon-slider');
+  1116→  slider.innerHTML = '';
+  1117→  CATEGORIES.forEach(cat => {
+  1118→    const item = document.createElement('div');
+  1119→    item.className = 'icon-slide' + (currentEditIcon === cat.id ? ' active' : '');
+  1120→    item.onclick = () => { if(navigator.vibrate) navigator.vibrate(20); selectEditIcon(item, cat.id, cat.name); };
+  1121→    item.innerHTML = `<i data-lucide="${sanitize(cat.id)}"></i>`;
+  1122→    slider.appendChild(item);
+  1123→  });
+  1124→  lucide.createIcons({ nodes: [slider] });
+  1125→}
+  1126→
+  1127→function selectEditIcon(el, icon, category) { currentEditIcon = icon; currentEditCategory = category; renderEditCategories(); }
+  1128→
+  1129→function closeEdit(e) {
+  1130→  if (e.target.id === 'edit-overlay') {
+  1131→    document.getElementById('edit-sheet').style.transform = '';
+  1132→    document.getElementById('edit-overlay').classList.remove('open');
+  1133→  }
+  1134→}
+  1135→
+  1136→function setType(el, type) {
+  1137→  document.querySelectorAll('.type-btn').forEach(t => t.classList.remove('active'));
+  1138→  el.classList.add('active'); currentEditType = type; updateEditDisplay();
+  1139→}
+  1140→
+  1141→function updateEditDisplay() {
+  1142→  const rawVal  = parseFloat(document.getElementById('edit-amt-input').value) || 0;
+  1143→  const paise   = toPaise(rawVal);
+  1144→  const display = document.getElementById('edit-display');
+  1145→  const isSpend = currentEditType === 'spend';
+  1146→  display.textContent  = (isSpend ? '-' : '+') + currencySymbol + fmtAmt(paise);
+  1147→  display.style.color = isSpend ? 'var(--spend-color)' : 'var(--earn-color)';
+  1148→}
+  1149→
+  1150→async function saveEdit() {
+  1151→  if (!currentEditId) return;
+  1152→  const rawVal = parseFloat(document.getElementById('edit-amt-input').value) || 0;
+  1153→  const newAmt = toPaise(rawVal); // store in PAISE
+  1154→  const newNote = document.getElementById('edit-note-input').value || currentEditCategory;
+  1155→  try {
+  1156→    await db.transactions.update(currentEditId, {
+  1157→      amount: newAmt,
+  1158→      type: currentEditType,
+  1159→      note: newNote,
+  1160→      category: currentEditCategory,
+  1161→      icon: currentEditIcon
+  1162→    });
+  1163→    document.getElementById('edit-sheet').style.transform = '';
+  1164→    document.getElementById('edit-overlay').classList.remove('open');
+  1165→    showToast('Changes saved! ✓');
+  1166→    updateState();
+  1167→  } catch (err) { console.error(err); showToast('Error saving changes'); }
+  1168→}
+  1169→
+  1170→// ── Bottom sheet swipe-to-close ───────────────────────────────
+  1171→const editSheet = document.getElementById('edit-sheet');
+  1172→let sheetStartY = 0, sheetCurrentY = 0, isDraggingSheet = false;
+  1173→editSheet.addEventListener('touchstart', e => {
+  1174→  if (e.target.closest('.sheet-handle') || e.target === editSheet) {
+  1175→    sheetStartY = e.touches[0].clientY; isDraggingSheet = true; editSheet.style.transition = 'none';
+  1176→  }
+  1177→}, { passive: true });
+  1178→editSheet.addEventListener('touchmove', e => {
+  1179→  if (!isDraggingSheet) return;
+  1180→  sheetCurrentY = e.touches[0].clientY - sheetStartY;
+  1181→  if (sheetCurrentY > 0) {
+  1182→    if (e.cancelable) e.preventDefault();
+  1183→    editSheet.style.transform = `translateY(${sheetCurrentY}px)`;
+  1184→  }
+  1185→}, { passive: true });
+  1186→editSheet.addEventListener('touchend', () => {
+  1187→  if (!isDraggingSheet) return;
+  1188→  isDraggingSheet = false;
+  1189→  editSheet.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+  1190→
+  1191→  if (sheetCurrentY > 120) {
+  1192→    // User dragged DOWN far enough → CLOSE (dismiss, don't save)
+  1193→    if (navigator.vibrate) navigator.vibrate(30);
+  1194→    editSheet.style.transform = 'translateY(100%)';
+  1195→    setTimeout(() => {
+  1196→      document.getElementById('edit-overlay').classList.remove('open');
+  1197→      editSheet.style.transform = '';
+  1198→    }, 400);
+  1199→  } else {
+  1200→    // Snap back
+  1201→    editSheet.style.transform = '';
+  1202→  }
+  1203→  sheetCurrentY = 0;
+  1204→});
+  1205→
+  1206→// ── Toast ─────────────────────────────────────────────────────
+  1207→let toastTimer;
+  1208→function showToast(msg) {
+  1209→  const t = document.getElementById('toast');
+  1210→  t.textContent = msg; t.classList.add('show');
+  1211→  clearTimeout(toastTimer);
+  1212→  toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+  1213→}
+  1214→
+  1215→// ── Delete / Multi-select logic ────────────────────────────────
+  1216→function handleTxTouchStart(e, id) {
+  1217→  if (isMultiSelectMode) return;
+  1218→  swipeStartX = e.touches[0].clientX;
+  1219→  swipeCurrentX = 0;
+  1220→  isSwiping = false;
+  1221→
+  1222→  longPressTimer = setTimeout(() => {
+  1223→    longPressTimer = null;
+  1224→    enableMultiSelect(id);
+  1225→  }, 500);
+  1226→}
+  1227→
+  1228→function handleTxTouchMove(e, id) {
+  1229→  if (isMultiSelectMode) return;
+  1230→
+  1231→  const touchX = e.touches[0].clientX;
+  1232→  const deltaX = touchX - swipeStartX;
+  1233→
+  1234→  if (Math.abs(deltaX) > 10) {
+  1235→    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  1236→    isSwiping = true;
+  1237→  }
+  1238→
+  1239→  if (deltaX < 0 && isSwiping) {
+  1240→    if (e.cancelable) e.preventDefault();
+  1241→    swipeCurrentX = deltaX;
+  1242→    const card = document.querySelector(`#tx-${id} .entry-card`);
+  1243→    const bg = document.querySelector(`#tx-${id} .delete-bg`);
+  1244→    if (card) card.style.transform = `translateX(${deltaX}px)`;
+  1245→    if (bg) bg.style.opacity = Math.min(1, Math.abs(deltaX) / 80);
+  1246→  }
+  1247→}
+  1248→
+  1249→function handleTxTouchEnd(e, id) {
+  1250→  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  1251→  if (isMultiSelectMode) return;
+  1252→
+  1253→  const card = document.querySelector(`#tx-${id} .entry-card`);
+  1254→  const bg = document.querySelector(`#tx-${id} .delete-bg`);
+  1255→  if (!card) return;
+  1256→
+  1257→  if (swipeCurrentX < -80) {
+  1258→    card.style.transition = 'transform 0.3s';
+  1259→    card.style.transform = `translateX(-100%)`;
+  1260→    if (bg) bg.style.opacity = '1';
+  1261→    setTimeout(() => executeDelete([id]), 300);
+  1262→  } else {
+  1263→    card.style.transition = 'transform 0.3s';
+  1264→    card.style.transform = `translateX(0)`;
+  1265→    if (bg) { bg.style.transition = 'opacity 0.3s'; bg.style.opacity = '0'; }
+  1266→    setTimeout(() => {
+  1267→      if(card) card.style.transition = '';
+  1268→      if(bg) bg.style.transition = '';
+  1269→    }, 300);
+  1270→  }
+  1271→
+  1272→  swipeStartX = 0;
+  1273→  swipeCurrentX = 0;
+  1274→  setTimeout(() => isSwiping = false, 50);
+  1275→}
+  1276→
+  1277→function handleTxClick(e, id, note, amount, type, icon, category) {
+  1278→  if (isSwiping) return;
+  1279→  if (isMultiSelectMode) {
+  1280→    const card = document.querySelector(`#tx-${id} .entry-card`);
+  1281→    if (selectedTxIds.has(id)) {
+  1282→      selectedTxIds.delete(id);
+  1283→      if (card) card.classList.remove('selected');
+  1284→      if (selectedTxIds.size === 0) { exitMultiSelect(); return; }
+  1285→    } else {
+  1286→      selectedTxIds.add(id);
+  1287→      if (card) card.classList.add('selected');
+  1288→    }
+  1289→    updateMultiSelectBar();
+  1290→  } else {
+  1291→    openEdit(id, note, amount, type, icon, category);
+  1292→  }
+  1293→}
+  1294→
+  1295→function enableMultiSelect(id) {
+  1296→  if (navigator.vibrate) navigator.vibrate(50);
+  1297→  isMultiSelectMode = true;
+  1298→  selectedTxIds.add(id);
+  1299→
+  1300→  document.getElementById('history-container').classList.add('multi-select-active');
+  1301→  document.getElementById('ms-select-all').style.display = 'block';
+  1302→  document.getElementById('ms-delete-bar').classList.add('show');
+  1303→
+  1304→  const card = document.querySelector(`#tx-${id} .entry-card`);
+  1305→  if (card) card.classList.add('selected');
+  1306→
+  1307→  updateMultiSelectBar();
+  1308→}
+  1309→
+  1310→function exitMultiSelect() {
+  1311→  isMultiSelectMode = false;
+  1312→  selectedTxIds.clear();
+  1313→  document.getElementById('history-container').classList.remove('multi-select-active');
+  1314→  document.getElementById('ms-select-all').style.display = 'none';
+  1315→  document.getElementById('ms-delete-bar').classList.remove('show');
+  1316→
+  1317→  document.querySelectorAll('.entry-card.selected').forEach(c => c.classList.remove('selected'));
+  1318→}
+  1319→
+  1320→function selectAllHistory() {
+  1321→  currentVisibleTxs.forEach(t => {
+  1322→    selectedTxIds.add(t.id);
+  1323→    const card = document.querySelector(`#tx-${t.id} .entry-card`);
+  1324→    if (card) card.classList.add('selected');
+  1325→  });
+  1326→  updateMultiSelectBar();
+  1327→}
+  1328→
+  1329→function updateMultiSelectBar() {
+  1330→  const countSpan = document.getElementById('ms-count');
+  1331→  if (countSpan) countSpan.textContent = selectedTxIds.size;
+  1332→}
+  1333→
+  1334→function deleteSelected() {
+  1335→  if (selectedTxIds.size > 0) {
+  1336→    executeDelete(Array.from(selectedTxIds));
+  1337→  }
+  1338→}
+  1339→
+  1340→function executeDelete(ids) {
+  1341→  Promise.all(ids.map(id => db.transactions.get(id))).then(txs => {
+  1342→    recentlyDeletedTxs = txs.filter(t => t);
+  1343→    db.transactions.bulkDelete(ids).then(() => {
+  1344→      isMultiSelectMode = false;
+  1345→      selectedTxIds.clear();
+  1346→      document.getElementById('ms-delete-bar').classList.remove('show');
+  1347→      document.getElementById('ms-select-all').style.display = 'none';
+  1348→      const hc = document.getElementById('history-container');
+  1349→      if (hc) hc.classList.remove('multi-select-active');
+  1350→      updateState();
+  1351→      showUndoToast(`${ids.length} item(s) deleted`);
+  1352→    }).catch(err => {
+  1353→      console.error('Delete failed:', err);
+  1354→      showToast('Error deleting items');
+  1355→    });
+  1356→  }).catch(err => {
+  1357→    console.error('Get transactions failed:', err);
+  1358→    showToast('Error loading items for deletion');
+  1359→  });
+  1360→}
+  1361→
+  1362→function showUndoToast(msg) {
+  1363→  const t = document.getElementById('toast');
+  1364→  // Build undo toast safely
+  1365→  t.innerHTML = '';
+  1366→  const msgSpan = document.createElement('span');
+  1367→  msgSpan.textContent = msg;
+  1368→  const undoBtn = document.createElement('button');
+  1369→  undoBtn.className = 'toast-undo';
+  1370→  undoBtn.textContent = 'Undo';
+  1371→  undoBtn.onclick = undoDelete;
+  1372→  t.appendChild(msgSpan);
+  1373→  t.appendChild(undoBtn);
+  1374→  t.classList.add('show');
+  1375→  clearTimeout(toastTimer);
+  1376→  toastTimer = setTimeout(() => {
+  1377→    t.classList.remove('show');
+  1378→    recentlyDeletedTxs = [];
+  1379→  }, 4000);
+  1380→}
+  1381→
+  1382→async function undoDelete() {
+  1383→  const t = document.getElementById('toast');
+  1384→  t.classList.remove('show');
+  1385→  clearTimeout(toastTimer);
+  1386→  if (recentlyDeletedTxs.length > 0) {
+  1387→    try {
+  1388→      await db.transactions.bulkAdd(recentlyDeletedTxs);
+  1389→      recentlyDeletedTxs = [];
+  1390→      updateState();
+  1391→      showToast('Undo successful');
+  1392→    } catch (err) {
+  1393→      console.error('Undo failed:', err);
+  1394→      showToast('Error restoring items');
+  1395→    }
+  1396→  }
+  1397→}
+  1398→
+  1399→// ── Period dropdown ───────────────────────────────────────────
+  1400→function openPeriodDropdown() { document.getElementById('period-overlay').classList.add('open'); }
+  1401→function closePeriod(e)       { if (!e || e.target.id === 'period-overlay') document.getElementById('period-overlay').classList.remove('open'); }
+  1402→function setPeriod(period)    { globalReportPeriod = period; closePeriod(); updateState(); }
+  1403→
+  1404→// ── Currency dropdown ─────────────────────────────────────────
+  1405→function openCurrencySheet()   { document.getElementById('currency-overlay').classList.add('open'); }
+  1406→function closeCurrencySheet(e) { if (!e || e.target.id === 'currency-overlay') document.getElementById('currency-overlay').classList.remove('open'); }
+  1407→async function updateCurrencyState(newSymbol) {
+  1408→  currencySymbol = newSymbol;
+  1409→  await saveSetting('currencySymbol', currencySymbol);
+  1410→  document.getElementById('currency-current-label').textContent = currencySymbol;
+  1411→  document.querySelectorAll('.currency-symbol-display').forEach(el => el.textContent = currencySymbol);
+  1412→  updateState(); updateAccDisplay(); closeCurrencySheet();
+  1413→}
+  1414→
+  1415→// ── App theme ─────────────────────────────────────────────────
+  1416→// Theme is locked to glass for modern aesthetics.
+  1417→
+  1418→// ── Export and Import ──────────────────────────────────────────
+  1419→async function exportData() {
+  1420→  try {
+  1421→    const txs = await db.transactions.toArray();
+  1422→    const settings = await db.settings.toArray();
+  1423→    const data = {
+  1424→      version: 1,
+  1425→      transactions: txs,
+  1426→      settings: settings
+  1427→    };
+  1428→    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  1429→    const url = URL.createObjectURL(blob);
+  1430→    const a = document.createElement('a');
+  1431→    a.href = url;
+  1432→    a.download = `pocketpulse_backup_${new Date().toISOString().split('T')[0]}.json`;
+  1433→    a.click();
+  1434→    URL.revokeObjectURL(url);
+  1435→    showToast('Data exported successfully! 📤');
+  1436→  } catch (err) {
+  1437→    console.error('Export error:', err);
+  1438→    showToast('Failed to export data');
+  1439→  }
+  1440→}
+  1441→
+  1442→async function importData(event) {
+  1443→  const file = event.target.files[0];
+  1444→  if (!file) return;
+  1445→  const reader = new FileReader();
+  1446→  reader.onload = async e => {
+  1447→    try {
+  1448→      const data = JSON.parse(e.target.result);
+  1449→      if (!data || typeof data !== 'object') throw new Error('Invalid JSON format');
+  1450→      if (!Array.isArray(data.transactions)) throw new Error('Missing transactions array');
+  1451→
+  1452→      const validatedTxs = [];
+  1453→      for (const tx of data.transactions) {
+  1454→        if (typeof tx.amount !== 'number' || isNaN(tx.amount)) throw new Error('Invalid transaction amount');
+  1455→        if (tx.type !== 'spend' && tx.type !== 'earn') throw new Error('Invalid transaction type');
+  1456→        if (!tx.category || typeof tx.category !== 'string') throw new Error('Invalid category');
+  1457→        
+  1458→        const cleanTx = {
+  1459→          amount: Math.round(tx.amount),
+  1460→          type: tx.type,
+  1461→          category: tx.category,
+  1462→          note: tx.note || tx.category,
+  1463→          icon: tx.icon || 'zap',
+  1464→          date: tx.date || Date.now()
+  1465→        };
+  1466→        validatedTxs.push(cleanTx);
+  1467→      }
+  1468→
+  1469→      if (!confirm('Importing data will overwrite all current transactions. Proceed?')) {
+  1470→        event.target.value = '';
+  1471→        return;
+  1472→      }
+  1473→      await db.transaction('rw', db.transactions, db.settings, async () => {
+  1474→        await db.transactions.clear();
+  1475→        await db.transactions.bulkAdd(validatedTxs);
+  1476→        
+  1477→        if (Array.isArray(data.settings)) {
+  1478→          for (const s of data.settings) {
+  1479→            if (s.id && s.value !== undefined) {
+  1480→              await db.settings.put(s);
+  1481→            }
+  1482→          }
+  1483→        }
+  1484→        showToast('Data imported successfully! 📥');
+  1485→        setTimeout(() => location.reload(), 1000);
+  1486→      });
+  1487→    } catch (err) {
+  1488→      console.error('Import error:', err);
+  1489→      showToast('Import failed: ' + err.message);
+  1490→    } finally {
+  1491→      event.target.value = '';
+  1492→    }
+  1493→  };
+  1494→  reader.readAsText(file);
+  1495→}
+  1496→
+  1497→// ── Storage Persistence & Quota ──────────────────────────────
+  1498→async function requestStoragePersistence() {
+  1499→  if (navigator.storage && navigator.storage.persist) {
+  1500→    try {
+  1501→      const isPersisted = await navigator.storage.persisted();
+  1502→      if (!isPersisted) {
+  1503→        const persisted = await navigator.storage.persist();
+  1504→        console.log(`Storage persistence granted: ${persisted}`);
+  1505→      } else {
+  1506→        console.log('Storage is already persistent');
+  1507→      }
+  1508→    } catch (e) {
+  1509→      console.warn('Storage persistence request failed:', e);
+  1510→    }
+  1511→  }
+  1512→}
+  1513→
+  1514→async function checkStorageQuota() {
+  1515→  if (navigator.storage && navigator.storage.estimate) {
+  1516→    try {
+  1517→      const { usage, quota } = await navigator.storage.estimate();
+  1518→      const percentUsed = (usage / quota) * 100;
+  1519→      if (percentUsed > 80) {
+  1520→        showToast('⚠️ Storage usage exceeds 80%!');
+  1521→      }
+  1522→    } catch (e) {
+  1523→      console.warn('Could not estimate storage quota:', e);
+  1524→    }
+  1525→  }
+  1526→}
+  1527→
+  1528→function showFatalErrorScreen(err) {
+  1529→  document.body.innerHTML = `
+  1530→    <div style="padding: 40px 20px; text-align: center; color: #fff; font-family: sans-serif; background: #121212; height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
+  1531→      <h2 style="color: #FF4D4D; margin-bottom: 16px; font-weight: 800;">Database Connection Failed</h2>
+  1532→      <p style="color: #aaa; margin-bottom: 24px; font-size: 14px; line-height: 1.5; max-width: 320px;">PocketPulse was unable to access local IndexedDB storage. Private browsing settings may be blocking storage access.</p>
+  1533→      <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 11px; border: 1px dashed rgba(255,255,255,0.1); margin-bottom: 24px; max-width: 90%; text-align: left; word-break: break-all; color: #FF6B4D;">
+  1534→        ${err.message || err}
+  1535→      </div>
+  1536→      <button data-action="reload" style="background: #C8FF00; color: #000; border: none; padding: 14px 28px; border-radius: 12px; font-weight: 800; cursor: pointer; transition: transform 0.1s;">Retry Connection</button>
+  1537→    </div>
+  1538→  `;
+  1539→}
+  1540→
+  1541→// ── Expose inline event handlers ─────────────────────────────
+  1542→window.switchTab         = switchTab;
+  1543→window.setTheme          = setTheme;
+  1544→window.wipeData          = wipeData;
+  1545→window.openPeriodDropdown= openPeriodDropdown;
+  1546→window.closePeriod       = closePeriod;
+  1547→window.setPeriod         = setPeriod;
+  1548→window.openCurrencySheet = openCurrencySheet;
+  1549→window.closeCurrencySheet= closeCurrencySheet;
+  1550→window.updateCurrencyState=updateCurrencyState;
+  1551→// Theme toggle removed
+  1552→window.exportData        = exportData;
+  1553→window.importData        = importData;
+  1554→window.clearNum          = clearNum;
+  1555→window.undoTap           = undoTap;
+  1556→window.logTransaction    = logTransaction;
+  1557→window.openEdit          = openEdit;
+  1558→window.closeEdit         = closeEdit;
+  1559→window.setType           = setType;
+  1560→window.updateEditDisplay = updateEditDisplay;
+  1561→window.saveEdit          = saveEdit;
+  1562→window.handleTxTouchStart= handleTxTouchStart;
+  1563→window.handleTxTouchMove = handleTxTouchMove;
+  1564→window.handleTxTouchEnd  = handleTxTouchEnd;
+  1565→window.handleTxClick     = handleTxClick;
+  1566→window.exitMultiSelect   = exitMultiSelect;
+  1567→window.selectAllHistory  = selectAllHistory;
+  1568→window.deleteSelected    = deleteSelected;
+  1569→window.undoDelete        = undoDelete;
+  1570→
+  1571→// ============================================================
+  1572→// INITIALIZE
+  1573→// ============================================================
+  1574→const ppInit = async () => {
+  1575→  // Unregister stale SWs and skip registration in preview/iframe contexts
+  1576→  if (navigator.serviceWorker) {
+  1577→    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  1578→  }
+  1579→  try {
+  1580→    try {
+  1581→      await db.open();
+  1582→      await requestStoragePersistence();
+  1583→      await checkStorageQuota();
+  1584→    } catch (err) {
+  1585→      console.error('Init error:', err);
+  1586→      showFatalErrorScreen(err);
+  1587→      return;
+  1588→    }
+  1589→
+  1590→    weeklyBudget     = await getSetting('weeklyBudget', 3000);
+  1591→    expectedEarnings = await getSetting('expectedEarnings', 8000);
+  1592→
+  1593→    let savedNumpadValues = await getSetting('numpadValues', null);
+  1594→    if (!savedNumpadValues || savedNumpadValues.length < 10) {
+  1595→      savedNumpadValues = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  1596→      await saveSetting('numpadValues', savedNumpadValues);
+  1597→    }
+  1598→    numpadValues = savedNumpadValues;
+  1599→
+  1600→    renderNumpad();
+  1601→    renderSettingsNumpad();
+  1602→
+  1603→    // Process static HTML icons (nav, hero chevron, settings chevron) once before dynamic renders
+  1604→    lucide.createIcons();
+  1605→
+  1606→    renderHomeCategories();
+  1607→
+  1608→    // Accent color — use data-color instead of parsing onclick attributes
+  1609→    const savedAccent = await getSetting('accentColor', '#C8FF00');
+  1610→    setTheme(null, savedAccent, false);
+  1611→
+  1612→    // Attach accent dot listeners via JS (no inline onclick)
+  1613→    document.querySelectorAll('.dot').forEach(dot => {
+  1614→      dot.addEventListener('click', () => setTheme(dot, dot.dataset.color));
+  1615→    });
+  1616→
+  1617→    currencySymbol = await getSetting('currencySymbol', '₹');
+  1618→    document.getElementById('currency-current-label').textContent = currencySymbol;
+  1619→    document.querySelectorAll('.currency-symbol-display').forEach(el => el.textContent = currencySymbol);
+  1620→
+  1621→    document.getElementById('limit-input').value    = weeklyBudget;
+  1622→    document.getElementById('earnings-input').value = expectedEarnings;
+  1623→
+  1624→    // Debounced input handlers
+  1625→    document.getElementById('limit-input').addEventListener('input', debounce(async e => {
+  1626→      weeklyBudget = parseInt(e.target.value) || 0;
+  1627→      await saveSetting('weeklyBudget', weeklyBudget);
+  1628→      updateState();
+  1629→    }, 500));
+  1630→    document.getElementById('earnings-input').addEventListener('input', debounce(async e => {
+  1631→      expectedEarnings = parseInt(e.target.value) || 0;
+  1632→      await saveSetting('expectedEarnings', expectedEarnings);
+  1633→      updateState();
+  1634→    }, 500));
+  1635→
+  1636→    // Event Delegation for data-action attributes
+  1637→    document.body.addEventListener('click', (e) => {
+  1638→      const actionEl = e.target.closest('[data-action]');
+  1639→      if (!actionEl) return;
+  1640→      const action = actionEl.dataset.action;
+  1641→
+  1642→      if (action === 'openPeriodDropdown') openPeriodDropdown();
+  1643→      if (action === 'undoTap') undoTap();
+  1644→      if (action === 'clearNum') clearNum();
+  1645→      if (action === 'logTransaction') logTransaction();
+  1646→      if (action === 'selectAllHistory') selectAllHistory();
+  1647→      if (action === 'openCurrencySheet') openCurrencySheet();
+  1648→      if (action === 'exportData') exportData();
+  1649→      if (action === 'wipeData') wipeData();
+  1650→      if (action === 'closeEdit') closeEdit(e);
+  1651→      if (action === 'saveEdit') saveEdit();
+  1652→      if (action === 'closePeriod') closePeriod(e);
+  1653→      if (action === 'closeCurrencySheet') closeCurrencySheet(e);
+  1654→      if (action === 'exitMultiSelect') exitMultiSelect();
+  1655→      if (action === 'deleteSelected') deleteSelected();
+  1656→      if (action === 'reload') location.reload();
+  1657→
+  1658→      if (action === 'showToast') showToast(actionEl.dataset.toast);
+  1659→      if (action === 'switchTab') {
+  1660→        switchTab(actionEl.dataset.tab, actionEl);
+  1661→        if (window.navStack) navStack.push(actionEl.dataset.tab);
+  1662→        if (window.gestureManager) gestureManager.setTabIndex(['home', 'reports', 'settings'].indexOf(actionEl.dataset.tab));
+  1663→      }
+  1664→      if (action === 'setType') setType(actionEl, actionEl.dataset.type);
+  1665→      if (action === 'setPeriod') setPeriod(actionEl.dataset.period);
+  1666→      if (action === 'updateCurrencyState') updateCurrencyState(actionEl.dataset.currency);
+  1667→    });
+  1668→
+  1669→    // Direct event listeners for inputs
+  1670→    document.getElementById('import-file-input')?.addEventListener('change', importData);
+  1671→    document.getElementById('edit-amt-input')?.addEventListener('input', updateEditDisplay);
+  1672→
+  1673→    await updateState();
+  1674→
+  1675→    // Initialize Hardware Navigation Managers
+  1676→    gestureManager = new GestureManager(document.querySelector('.app-container'), ['home', 'reports', 'settings'], (tabId, dir) => {
+  1677→      const navEl = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
+  1678→      if (navEl) {
+  1679→        switchTab(tabId, navEl);
+  1680→        if (window.navStack) navStack.push(tabId);
+  1681→      }
+  1682→    });
+  1683→    navStack = new NavigationStack(['home', 'reports', 'settings']);
+  1684→    new SheetGestureManager('edit-overlay', 'edit-overlay', () => closeEdit(null));
+  1685→    new SheetGestureManager('period-overlay', 'period-overlay', () => closePeriod(null));
+  1686→    new SheetGestureManager('currency-overlay', 'currency-overlay', () => closeCurrencySheet(null));
+  1687→
+  1688→  } catch (err) { console.error('Init error:', err); }
+  1689→};
+  1690→
+  1691→if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  1692→  ppInit();
+  1693→} else {
+  1694→  window.addEventListener('DOMContentLoaded', ppInit);
+  1695→}
+  1696→

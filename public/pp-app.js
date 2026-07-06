@@ -16,6 +16,231 @@ function debounce(fn, delay) {
 }
 
 // ============================================================
+// GSAP ANIMATION ENGINE — 60fps compositor-only
+// ============================================================
+
+/** Ensure gsap is ready and configure for consistent 60fps */
+function initGSAP() {
+  if (typeof gsap === 'undefined') return;
+  gsap.ticker.lagSmoothing(0);
+  gsap.defaults({ overwrite: 'auto', force3D: true });
+}
+
+const A = {
+  // ── Tab Switch ──────────────────────────────────────────
+  switchTab(fromEl, toEl, direction) {
+    const dx = 50 * direction;
+    const tl = gsap.timeline();
+    gsap.killTweensOf([fromEl, toEl]);
+    tl.set(toEl, { display: 'block', opacity: 0, x: dx, y: 0 })
+      .to(fromEl, { opacity: 0, x: -dx * 0.6, duration: 0.18, ease: 'power2.in' }, 0)
+      .to(toEl,   { opacity: 1, x: 0,    duration: 0.32, ease: 'power3.out' }, 0.12)
+      .set(fromEl, { display: 'none', x: 0, opacity: 0 });
+    return tl;
+  },
+
+  // ── Bottom Sheet ────────────────────────────────────────
+  openSheet(overlay, sheet) {
+    const tl = gsap.timeline();
+    gsap.killTweensOf([overlay, sheet]);
+    tl.set(overlay, { visibility: 'visible' })
+      .set(sheet, { transform: 'translateY(100%)' })
+      .to(overlay, { opacity: 1, duration: 0.25, ease: 'power2.out' }, 0)
+      .to(sheet,   { transform: 'translateY(0%)', duration: 0.45, ease: 'back.out(1.2)' }, 0.08);
+    return tl;
+  },
+
+  closeSheet(overlay, sheet) {
+    const tl = gsap.timeline({
+      onComplete: () => {
+        gsap.set(overlay, { visibility: 'hidden', opacity: 0 });
+        gsap.set(sheet, { transform: 'translateY(100%)' });
+      }
+    });
+    gsap.killTweensOf([overlay, sheet]);
+    tl.to(sheet,   { transform: 'translateY(100%)', duration: 0.32, ease: 'power3.in' }, 0)
+      .to(overlay, { opacity: 0, duration: 0.22, ease: 'power2.in' }, 0.1);
+    return tl;
+  },
+
+  snapSheetBack(sheet) {
+    gsap.killTweensOf(sheet);
+    return gsap.to(sheet, { transform: 'translateY(0%)', duration: 0.4, ease: 'elastic.out(1, 0.5)' });
+  },
+
+  dismissSheetDrag(sheet, overlay) {
+    const tl = gsap.timeline({
+      onComplete: () => {
+        gsap.set(overlay, { visibility: 'hidden', opacity: 0 });
+        gsap.set(sheet, { transform: 'translateY(100%)' });
+      }
+    });
+    gsap.killTweensOf(sheet);
+    tl.to(sheet,   { transform: 'translateY(100%)', duration: 0.3, ease: 'power3.in' }, 0)
+      .to(overlay, { opacity: 0, duration: 0.2, ease: 'power2.in' }, 0.08);
+    return tl;
+  },
+
+  // ── Toast ────────────────────────────────────────────────
+  toastShow(el) {
+    gsap.killTweensOf(el);
+    gsap.set(el, { visibility: 'visible' });
+    return gsap.fromTo(el,
+      { opacity: 0, y: 16, scale: 0.92 },
+      { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'back.out(2.5)' }
+    );
+  },
+
+  toastHide(el) {
+    gsap.killTweensOf(el);
+    return gsap.to(el, {
+      opacity: 0, y: 12, scale: 0.95, duration: 0.25, ease: 'power2.in',
+      onComplete: () => gsap.set(el, { visibility: 'hidden', pointerEvents: 'none' })
+    });
+  },
+
+  // ── Multi-Select Bar ────────────────────────────────────
+  showMultiSelectBar(el) {
+    gsap.killTweensOf(el);
+    return gsap.to(el, { yPercent: 0, duration: 0.35, ease: 'power3.out' });
+  },
+
+  hideMultiSelectBar(el) {
+    gsap.killTweensOf(el);
+    return gsap.to(el, { yPercent: 100, duration: 0.28, ease: 'power3.in' });
+  },
+
+  // ── Numpad ───────────────────────────────────────────────
+  numpadTap(btn) {
+    gsap.killTweensOf(btn);
+    gsap.fromTo(btn, { scale: 0.82 }, { scale: 1, duration: 0.35, ease: 'back.out(4)' });
+  },
+
+  displayBounce(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 1.06 }, { scale: 1, duration: 0.35, ease: 'elastic.out(1, 0.4)' });
+  },
+
+  // ── Nav ─────────────────────────────────────────────────
+  navTap(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.85 }, { scale: 1, duration: 0.3, ease: 'back.out(4)' });
+  },
+
+  navDot(el, active) {
+    gsap.killTweensOf(el);
+    // ::after pseudo — animate the element itself as proxy
+    gsap.to(el, { scale: active ? 1 : 0, duration: 0.4, ease: 'back.out(3)' });
+  },
+
+  // ── Category Chips ──────────────────────────────────────
+  categorySelect(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.9, opacity: 0.6 }, { scale: 1.05, opacity: 1, duration: 0.35, ease: 'back.out(3)' });
+  },
+
+  categoryDeselect(el) {
+    gsap.killTweensOf(el);
+    gsap.to(el, { scale: 1, opacity: 0.5, duration: 0.2, ease: 'power2.out' });
+  },
+
+  // ── Color Dots ──────────────────────────────────────────
+  dotSelect(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.8 }, { scale: 1.15, duration: 0.4, ease: 'back.out(3)' });
+  },
+
+  // ── Hero Counter ────────────────────────────────────────
+  animateCounter(element, fromPaise, toPaise, symbol, duration) {
+    duration = duration || 0.45;
+    const obj = { val: fromPaise };
+    gsap.killTweensOf(obj);
+    gsap.to(obj, {
+      val: toPaise,
+      duration: duration,
+      ease: 'power2.out',
+      onUpdate() {
+        element.innerHTML = `<span class="hero-currency">${symbol}</span>${fmtAmt(Math.round(obj.val))}`;
+      }
+    });
+  },
+
+  // ── Progress Bar ────────────────────────────────────────
+  progressFill(el, pct) {
+    gsap.killTweensOf(el);
+    gsap.to(el, { scaleX: Math.max(0, pct), duration: 0.5, ease: 'power3.out' });
+  },
+
+  // ── Entry Cards ─────────────────────────────────────────
+  staggerCards(cards) {
+    if (!cards.length) return;
+    gsap.fromTo(cards,
+      { opacity: 0, y: 20, scale: 0.96 },
+      { opacity: 1, y: 0, scale: 1, duration: 0.35, stagger: 0.04, ease: 'power3.out' }
+    );
+  },
+
+  entryPress(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.97 }, { scale: 1, duration: 0.25, ease: 'back.out(3)' });
+  },
+
+  // ── Delete Swipe ────────────────────────────────────────
+  deleteSwipeDismiss(card, bg, onComplete) {
+    const tl = gsap.timeline({ onComplete });
+    tl.to(card, { xPercent: -100, duration: 0.3, ease: 'power3.in' }, 0)
+      .to(bg, { opacity: 1, duration: 0.2 }, 0);
+    return tl;
+  },
+
+  deleteSwipeSnapBack(card, bg) {
+    const tl = gsap.timeline({ onComplete: () => gsap.set(bg, { opacity: 0 }) });
+    tl.to(card, { x: 0, duration: 0.35, ease: 'elastic.out(1, 0.6)' }, 0)
+      .to(bg, { opacity: 0, duration: 0.25 }, 0);
+    return tl;
+  },
+
+  // ── Category Bars (Reports) ─────────────────────────────
+  categoryBars(fills, pcts) {
+    fills.forEach((fill, i) => {
+      gsap.killTweensOf(fill);
+      gsap.to(fill, {
+        scaleX: pcts[i] / 100,
+        duration: 0.7,
+        delay: i * 0.05,
+        ease: 'power3.out'
+      });
+    });
+  },
+
+  // ── Hero Card Pulse (on log) ────────────────────────────
+  heroPulse(el) {
+    gsap.killTweensOf(el);
+    const tl = gsap.timeline();
+    tl.to(el, { scale: 1.02, boxShadow: '0 0 0 2px var(--accent)', duration: 0.12, ease: 'power2.out' })
+      .to(el, { scale: 1, boxShadow: '0 0 0 0px transparent', duration: 0.3, ease: 'power2.out' });
+    return tl;
+  },
+
+  // ── Action Buttons ──────────────────────────────────────
+  actionBtnPress(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: 'back.out(3)' });
+  },
+
+  // ── Entry Checkbox Expand ───────────────────────────────
+  checkboxExpand(checkboxes) {
+    return gsap.to(checkboxes, { width: 20, opacity: 1, marginRight: 12, duration: 0.3, stagger: 0.02, ease: 'power3.out' });
+  },
+
+  // ── Icon Slide Select (Edit Sheet) ──────────────────────
+  iconSlideSelect(el) {
+    gsap.killTweensOf(el);
+    gsap.fromTo(el, { scale: 0.92 }, { scale: 1, duration: 0.25, ease: 'back.out(3)' });
+  }
+};
+
+// ============================================================
 // HARDWARE NAVIGATION MANAGERS
 // ============================================================
 class GestureManager {
@@ -423,8 +648,15 @@ function switchTab(tabId, el) {
   const next = document.getElementById('tab-' + tabId);
   if (!next || current === next) return;
 
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  if (el) el.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.remove('active');
+    const dot = n;
+    if (typeof gsap !== 'undefined') A.navDot(dot, false);
+  });
+  if (el) {
+    el.classList.add('active');
+    if (typeof gsap !== 'undefined') A.navTap(el);
+  }
   
   currentTab = tabId;
 
@@ -433,19 +665,15 @@ function switchTab(tabId, el) {
   const toIdx = tabs.indexOf(tabId);
   const dir = toIdx > fromIdx ? 1 : -1;
 
-  next.classList.remove('swipe-enter-left', 'swipe-enter-right');
-  next.classList.add(dir === 1 ? 'swipe-enter-right' : 'swipe-enter-left');
-
-  current.classList.remove('active');
-  
-  void next.offsetWidth; // Force reflow
-  
-  next.classList.add('active');
-  next.classList.remove('swipe-enter-left', 'swipe-enter-right');
+  if (typeof gsap !== 'undefined') {
+    A.switchTab(current, next, dir);
+  } else {
+    current.classList.remove('active');
+    next.classList.add('active');
+  }
   
   updateState();
 
-  // Scroll to top when switching to Home
   if (tabId === 'home') {
     setTimeout(() => {
       document.getElementById('tab-home')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -456,7 +684,9 @@ function switchTab(tabId, el) {
 // ── Accent theme ──────────────────────────────────────────────
 function setTheme(el, hex, save = true) {
   document.querySelectorAll('.dot').forEach(d => {
-    d.classList.toggle('selected', d.dataset.color === hex);
+    const isSelected = d.dataset.color === hex;
+    d.classList.toggle('selected', isSelected);
+    if (isSelected && typeof gsap !== 'undefined') A.dotSelect(d);
   });
   document.documentElement.style.setProperty('--accent', hex);
   const h = hex.replace('#', '');
@@ -505,7 +735,12 @@ function renderHomeCategories() {
   CATEGORIES.forEach(cat => {
     const item = document.createElement('div');
     item.className = 'qc-item' + (selectedHomeCategory.id === cat.id ? ' active' : '');
-    item.onclick = () => { if(navigator.vibrate) navigator.vibrate(20); selectedHomeCategory = cat; renderHomeCategories(); };
+    item.onclick = () => {
+    if(navigator.vibrate) navigator.vibrate(20);
+    selectedHomeCategory = cat;
+    if (typeof gsap !== 'undefined') A.categorySelect(item);
+    renderHomeCategories();
+  };
     item.innerHTML = `<i data-lucide="${sanitize(cat.id)}" class="qc-icon"></i>`;
     slider.appendChild(item);
   });
@@ -525,7 +760,7 @@ function renderNumpad() {
     const btn = document.createElement('button');
     btn.className = 'np-btn';
     btn.innerText = displayVal;
-    btn.onclick = () => { if(navigator.vibrate) navigator.vibrate(50); addNum(val); };
+    btn.onclick = () => { if(navigator.vibrate) navigator.vibrate(50); addNum(val); if(typeof gsap!=='undefined') A.numpadTap(btn); };
     grid.appendChild(btn);
   });
 }
@@ -564,13 +799,7 @@ function addNum(val) {
   acc += paise;
   tapHistory.push(paise);
   updateAccDisplay();
-  // Flash the display
-  const display = document.getElementById('np-display');
-  display.style.transform = 'scale(1.04)';
-  setTimeout(() => {
-    display.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-    display.style.transform = 'scale(1)';
-  }, 0);
+  if (typeof gsap !== 'undefined') A.displayBounce(document.getElementById('np-display'));
 }
 
 function undoTap() {
@@ -593,15 +822,7 @@ async function logTransaction() {
   };
   try {
     await addTransactionToDB(transaction);
-    // Pulse animation on hero card
-    const heroCard = document.querySelector('.hero-card');
-    heroCard.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
-    heroCard.style.transform = 'scale(1.02)';
-    heroCard.style.boxShadow = '0 0 0 2px var(--accent)';
-    setTimeout(() => {
-      heroCard.style.transform = '';
-      heroCard.style.boxShadow = '';
-    }, 150);
+    if (typeof gsap !== 'undefined') A.heroPulse(document.querySelector('.hero-card'));
     showToast(`✓ Logged ${currencySymbol}${fmtAmt(acc)}`);
     clearNum();
     updateState();
@@ -668,19 +889,12 @@ async function updateState() {
 }
 
 // ── Hero Card ─────────────────────────────────────────────────
-function animateCounter(element, fromPaise, toPaise_target, duration = 400) {
-  const startTime = performance.now();
-
-  function update(currentTime) {
-    const elapsed = currentTime - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    // Ease out cubic
-    const eased = 1 - Math.pow(1 - progress, 3);
-    const current = Math.round(fromPaise + (toPaise_target - fromPaise) * eased);
-    element.innerHTML = `<span class="hero-currency">${currencySymbol}</span>${fmtAmt(current)}`;
-    if (progress < 1) requestAnimationFrame(update);
+function animateCounter(element, fromPaise, toPaise_target, duration) {
+  if (typeof gsap !== 'undefined') {
+    A.animateCounter(element, fromPaise, toPaise_target, currencySymbol, duration);
+  } else {
+    element.innerHTML = `<span class="hero-currency">${currencySymbol}</span>${fmtAmt(toPaise_target)}`;
   }
-  requestAnimationFrame(update);
 }
 
 function updateHeroCard(spendPaise, budgetMultiplier, label) {
@@ -692,7 +906,11 @@ function updateHeroCard(spendPaise, budgetMultiplier, label) {
   const spendRupees = spendPaise / 100;
   const pct = Math.min((spendRupees / currentBudget) * 100, 100) || 0;
 
-  document.getElementById('hero-progress').style.transform = `scaleX(${pct / 100})`;
+  if (typeof gsap !== 'undefined') {
+    A.progressFill(document.getElementById('hero-progress'), pct / 100);
+  } else {
+    document.getElementById('hero-progress').style.transform = `scaleX(${pct / 100})`;
+  }
   document.getElementById('hero-progress').style.background = pct >= 100
     ? 'var(--text)'
     : 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent))';
@@ -920,17 +1138,17 @@ function renderCategoryBreakdown(categoryTotals, totalSpendPaise) {
     row.appendChild(bar);
     row.appendChild(pctLabel);
     fragment.appendChild(row);
-
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        fill.style.transition = 'transform 0.7s cubic-bezier(0.34, 1.1, 0.64, 1)';
-        fill.style.transform = `scaleX(${pct / 100})`;
-      }, i * 60);
-    });
   });
 
   container.appendChild(fragment);
   lucide.createIcons({ nodes: [container] });
+
+  // GSAP category bar animation
+  if (typeof gsap !== 'undefined') {
+    const fills = container.querySelectorAll('.cat-bar-fill');
+    const pcts = sortedEntries.map(e => e.pct);
+    A.categoryBars(fills, pcts);
+  }
 }
 
 // ============================================================
@@ -1059,6 +1277,12 @@ async function renderHistory(reset = false) {
   container.appendChild(fragment);
   lucide.createIcons({ nodes: [container] }); // Only scan new nodes
 
+  // GSAP staggered card entrance
+  if (typeof gsap !== 'undefined' && historyPage === 1) {
+    const cards = container.querySelectorAll('.entry-card-wrapper');
+    A.staggerCards(Array.from(cards));
+  }
+
   currentVisibleTxs = [...currentVisibleTxs, ...txs];
   historyPage++;
   isLoadingHistory = false;
@@ -1108,7 +1332,11 @@ function openEdit(id, note, amtPaise, type, icon, category) {
   currentEditCategory = category || 'Quick';
   renderEditCategories();
   updateEditDisplay();
-  document.getElementById('edit-overlay').classList.add('open');
+  if (typeof gsap !== 'undefined') {
+    A.openSheet(document.getElementById('edit-overlay'), document.getElementById('edit-sheet'));
+  } else {
+    document.getElementById('edit-overlay').classList.add('open');
+  }
 }
 
 function renderEditCategories() {
@@ -1117,7 +1345,7 @@ function renderEditCategories() {
   CATEGORIES.forEach(cat => {
     const item = document.createElement('div');
     item.className = 'icon-slide' + (currentEditIcon === cat.id ? ' active' : '');
-    item.onclick = () => { if(navigator.vibrate) navigator.vibrate(20); selectEditIcon(item, cat.id, cat.name); };
+    item.onclick = () => { if(navigator.vibrate) navigator.vibrate(20); if(typeof gsap!=='undefined') A.iconSlideSelect(item); selectEditIcon(item, cat.id, cat.name); };
     item.innerHTML = `<i data-lucide="${sanitize(cat.id)}"></i>`;
     slider.appendChild(item);
   });
@@ -1160,8 +1388,12 @@ async function saveEdit() {
       category: currentEditCategory,
       icon: currentEditIcon
     });
-    document.getElementById('edit-sheet').style.transform = '';
-    document.getElementById('edit-overlay').classList.remove('open');
+    if (typeof gsap !== 'undefined') {
+      A.closeSheet(document.getElementById('edit-overlay'), document.getElementById('edit-sheet'));
+    } else {
+      document.getElementById('edit-sheet').style.transform = '';
+      document.getElementById('edit-overlay').classList.remove('open');
+    }
     showToast('Changes saved! ✓');
     updateState();
   } catch (err) { console.error(err); showToast('Error saving changes'); }
@@ -1172,7 +1404,8 @@ const editSheet = document.getElementById('edit-sheet');
 let sheetStartY = 0, sheetCurrentY = 0, isDraggingSheet = false;
 editSheet.addEventListener('touchstart', e => {
   if (e.target.closest('.sheet-handle') || e.target === editSheet) {
-    sheetStartY = e.touches[0].clientY; isDraggingSheet = true; editSheet.style.transition = 'none';
+    sheetStartY = e.touches[0].clientY; isDraggingSheet = true;
+    if (typeof gsap !== 'undefined') gsap.killTweensOf(editSheet);
   }
 }, { passive: true });
 editSheet.addEventListener('touchmove', e => {
@@ -1186,19 +1419,26 @@ editSheet.addEventListener('touchmove', e => {
 editSheet.addEventListener('touchend', () => {
   if (!isDraggingSheet) return;
   isDraggingSheet = false;
-  editSheet.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
-
   if (sheetCurrentY > 120) {
-    // User dragged DOWN far enough → CLOSE (dismiss, don't save)
     if (navigator.vibrate) navigator.vibrate(30);
-    editSheet.style.transform = 'translateY(100%)';
-    setTimeout(() => {
-      document.getElementById('edit-overlay').classList.remove('open');
-      editSheet.style.transform = '';
-    }, 400);
+    if (typeof gsap !== 'undefined') {
+      gsap.to(editSheet, { transform: 'translateY(100%)', duration: 0.3, ease: 'power3.in', onComplete: () => {
+        document.getElementById('edit-overlay').style.visibility = 'hidden';
+        document.getElementById('edit-overlay').style.opacity = '0';
+      }});
+    } else {
+      editSheet.style.transform = 'translateY(100%)';
+      setTimeout(() => {
+        document.getElementById('edit-overlay').classList.remove('open');
+        editSheet.style.transform = '';
+      }, 400);
+    }
   } else {
-    // Snap back
-    editSheet.style.transform = '';
+    if (typeof gsap !== 'undefined') {
+      A.snapSheetBack(editSheet);
+    } else {
+      editSheet.style.transform = '';
+    }
   }
   sheetCurrentY = 0;
 });
@@ -1207,9 +1447,20 @@ editSheet.addEventListener('touchend', () => {
 let toastTimer;
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
+  t.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+  if (typeof gsap !== 'undefined') {
+    A.toastShow(t);
+  } else {
+    t.classList.add('show');
+  }
+  toastTimer = setTimeout(() => {
+    if (typeof gsap !== 'undefined') {
+      A.toastHide(t);
+    } else {
+      t.classList.remove('show');
+    }
+  }, 2000);
 }
 
 // ── Delete / Multi-select logic ────────────────────────────────
@@ -1255,18 +1506,22 @@ function handleTxTouchEnd(e, id) {
   if (!card) return;
 
   if (swipeCurrentX < -80) {
-    card.style.transition = 'transform 0.3s';
-    card.style.transform = `translateX(-100%)`;
-    if (bg) bg.style.opacity = '1';
-    setTimeout(() => executeDelete([id]), 300);
+    if (typeof gsap !== 'undefined') {
+      A.deleteSwipeDismiss(card, bg, () => executeDelete([id]));
+    } else {
+      card.style.transition = 'transform 0.3s';
+      card.style.transform = `translateX(-100%)`;
+      if (bg) bg.style.opacity = '1';
+      setTimeout(() => executeDelete([id]), 300);
+    }
   } else {
-    card.style.transition = 'transform 0.3s';
-    card.style.transform = `translateX(0)`;
-    if (bg) { bg.style.transition = 'opacity 0.3s'; bg.style.opacity = '0'; }
-    setTimeout(() => {
-      if(card) card.style.transition = '';
-      if(bg) bg.style.transition = '';
-    }, 300);
+    if (typeof gsap !== 'undefined') {
+      A.deleteSwipeSnapBack(card, bg);
+    } else {
+      card.style.transition = 'transform 0.3s';
+      card.style.transform = `translateX(0)`;
+      if (bg) { bg.style.transition = 'opacity 0.3s'; bg.style.opacity = '0'; }
+    }
   }
 
   swipeStartX = 0;
@@ -1299,7 +1554,14 @@ function enableMultiSelect(id) {
 
   document.getElementById('history-container').classList.add('multi-select-active');
   document.getElementById('ms-select-all').style.display = 'block';
-  document.getElementById('ms-delete-bar').classList.add('show');
+  if (typeof gsap !== 'undefined') {
+    A.showMultiSelectBar(document.getElementById('ms-delete-bar'));
+    // Animate checkboxes
+    const checkboxes = document.querySelectorAll('.entry-checkbox');
+    if (checkboxes.length) A.checkboxExpand(checkboxes);
+  } else {
+    document.getElementById('ms-delete-bar').classList.add('show');
+  }
 
   const card = document.querySelector(`#tx-${id} .entry-card`);
   if (card) card.classList.add('selected');
@@ -1312,8 +1574,11 @@ function exitMultiSelect() {
   selectedTxIds.clear();
   document.getElementById('history-container').classList.remove('multi-select-active');
   document.getElementById('ms-select-all').style.display = 'none';
-  document.getElementById('ms-delete-bar').classList.remove('show');
-
+  if (typeof gsap !== 'undefined') {
+    A.hideMultiSelectBar(document.getElementById('ms-delete-bar'));
+  } else {
+    document.getElementById('ms-delete-bar').classList.remove('show');
+  }
   document.querySelectorAll('.entry-card.selected').forEach(c => c.classList.remove('selected'));
 }
 
@@ -1397,13 +1662,31 @@ async function undoDelete() {
 }
 
 // ── Period dropdown ───────────────────────────────────────────
-function openPeriodDropdown() { document.getElementById('period-overlay').classList.add('open'); }
-function closePeriod(e)       { if (!e || e.target.id === 'period-overlay') document.getElementById('period-overlay').classList.remove('open'); }
+function openPeriodDropdown() {
+  const ov = document.getElementById('period-overlay');
+  if (typeof gsap !== 'undefined') A.openSheet(ov, document.getElementById('period-sheet'));
+  else ov.classList.add('open');
+}
+function closePeriod(e) {
+  if (e && e.target.id !== 'period-overlay') return;
+  const ov = document.getElementById('period-overlay');
+  if (typeof gsap !== 'undefined') A.closeSheet(ov, document.getElementById('period-sheet'));
+  else ov.classList.remove('open');
+}
 function setPeriod(period)    { globalReportPeriod = period; closePeriod(); updateState(); }
 
 // ── Currency dropdown ─────────────────────────────────────────
-function openCurrencySheet()   { document.getElementById('currency-overlay').classList.add('open'); }
-function closeCurrencySheet(e) { if (!e || e.target.id === 'currency-overlay') document.getElementById('currency-overlay').classList.remove('open'); }
+function openCurrencySheet() {
+  const ov = document.getElementById('currency-overlay');
+  if (typeof gsap !== 'undefined') A.openSheet(ov, document.getElementById('currency-sheet'));
+  else ov.classList.add('open');
+}
+function closeCurrencySheet(e) {
+  if (e && e.target.id !== 'currency-overlay') return;
+  const ov = document.getElementById('currency-overlay');
+  if (typeof gsap !== 'undefined') A.closeSheet(ov, document.getElementById('currency-sheet'));
+  else ov.classList.remove('open');
+}
 async function updateCurrencyState(newSymbol) {
   currencySymbol = newSymbol;
   await saveSetting('currencySymbol', currencySymbol);
@@ -1572,7 +1855,7 @@ window.undoDelete        = undoDelete;
 // INITIALIZE
 // ============================================================
 const ppInit = async () => {
-  // Unregister stale SWs and skip registration in preview/iframe contexts
+  initGSAP();
   if (navigator.serviceWorker) {
     navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
   }
@@ -1660,6 +1943,12 @@ const ppInit = async () => {
         switchTab(actionEl.dataset.tab, actionEl);
         if (window.navStack) navStack.push(actionEl.dataset.tab);
         if (window.gestureManager) gestureManager.setTabIndex(['home', 'reports', 'settings'].indexOf(actionEl.dataset.tab));
+      }
+      // GSAP micro-interactions
+      if (typeof gsap !== 'undefined') {
+        if (action === 'logTransaction' || action === 'clearNum') A.actionBtnPress(actionEl);
+        if (action === 'undoTap') A.actionBtnPress(actionEl);
+        if (action === 'openPeriodDropdown' || action === 'openCurrencySheet') A.actionBtnPress(actionEl);
       }
       if (action === 'setType') setType(actionEl, actionEl.dataset.type);
       if (action === 'setPeriod') setPeriod(actionEl.dataset.period);

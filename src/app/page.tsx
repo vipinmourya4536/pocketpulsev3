@@ -23,6 +23,10 @@ export default function Page() {
       <div className="app-container" dangerouslySetInnerHTML={{ __html: APP_HTML }} />
 
       <Script
+        src="https://unpkg.com/gsap@3.12.7/dist/gsap.min.js"
+        strategy="afterInteractive"
+      />
+      <Script
         src="https://unpkg.com/lucide@0.359.0/dist/umd/lucide.js"
         strategy="afterInteractive"
       />
