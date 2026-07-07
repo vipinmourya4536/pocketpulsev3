@@ -27,17 +27,39 @@ function initGSAP() {
 }
 
 const A = {
-  // ── Tab Switch ──────────────────────────────────────────
+  // ── Tab Switch — Cross-fade with deferred unmount ───────
   switchTab(fromEl, toEl, direction, onDone) {
-    const dx = 50 * direction;
-    const tl = gsap.timeline({
-      onComplete: onDone
-    });
     gsap.killTweensOf([fromEl, toEl]);
-    tl.set(toEl, { display: 'block', opacity: 0, x: dx, y: 0, force3D: true })
-      .to(fromEl, { opacity: 0, x: -dx * 0.6, duration: 0.18, ease: 'power2.in', force3D: true }, 0)
-      .to(toEl,   { opacity: 1, x: 0,    duration: 0.32, ease: 'power3.out', force3D: true }, 0.12)
-      .set(fromEl, { display: 'none', x: 0, opacity: 0, clearProps: 'x,opacity,force3D' });
+
+    // Ensure both layers are visible and stacked
+    gsap.set(fromEl, { display: 'block', zIndex: 1, clearProps: 'transform,opacity' });
+    gsap.set(toEl,   { display: 'block', zIndex: 2, opacity: 0, y: 18 * direction });
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        // Deferred unmount: only now remove the outgoing view from paint
+        gsap.set(fromEl, { display: 'none', opacity: 0, y: 0, zIndex: '' });
+        gsap.set(toEl,   { zIndex: '' });
+        if (onDone) onDone();
+      }
+    });
+
+    // Exit: outgoing fades + slides down
+    tl.to(fromEl, {
+      opacity: 0,
+      y: -18 * direction,
+      duration: 0.22,
+      ease: 'power2.in',
+    }, 0);
+
+    // Enter: incoming fades in + slides into place (staggered start)
+    tl.to(toEl, {
+      opacity: 1,
+      y: 0,
+      duration: 0.30,
+      ease: 'power3.out',
+    }, 0.08);
+
     return tl;
   },
 
@@ -646,7 +668,7 @@ let tabSwitchGen = 0; // Prevents stale onComplete callbacks from interrupted an
 let previousSpendPaise = 0;
 
 // ============================================================
-// TAB SWITCHING — Animated directional slide
+// TAB SWITCHING — Absolute-layered cross-fade with deferred unmount
 // ============================================================
 function switchTab(tabId, el) {
   const current = document.querySelector('.tab-content.active');
@@ -664,7 +686,7 @@ function switchTab(tabId, el) {
       A.navDot(el, true);
     }
   }
-  
+
   currentTab = tabId;
 
   const tabs = ['home', 'reports', 'settings'];
@@ -672,21 +694,20 @@ function switchTab(tabId, el) {
   const toIdx = tabs.indexOf(tabId);
   const dir = toIdx > fromIdx ? 1 : -1;
 
-  // Always manage .active class so querySelector('.tab-content.active') stays correct
+  // Transfer .active class immediately for state consistency
   current.classList.remove('active');
   next.classList.add('active');
 
   if (typeof gsap !== 'undefined') {
-    // Clean ALL stale inline display styles from previous (possibly interrupted) animations
-    document.querySelectorAll('.tab-content').forEach(t => { t.style.display = ''; });
-    // Re-apply: keep current visible for the exit animation, next gets set by GSAP
-    current.style.display = 'block';
+    // Clean any stale inline styles from interrupted transitions
+    document.querySelectorAll('.tab-content').forEach(t => {
+      gsap.set(t, { clearProps: 'all' });
+    });
+
     const gen = ++tabSwitchGen;
     A.switchTab(current, next, dir, () => {
-      // Ignore stale callbacks from interrupted animations
       if (gen !== tabSwitchGen) return;
-      current.style.display = '';
-      next.style.display = '';
+      // Deferred unmount complete — outgoing is now safely hidden
     });
   }
 

@@ -144,3 +144,22 @@ Stage Summary:
 - No hydration mismatch errors (verified via agent-browser console on fresh reload)
 - All 3 tabs (Home, Reports, Settings) switch correctly with all nav items visible
 - App loads in a single paint: HTML + CSS from SSR, scripts load asynchronously after
+---
+Task ID: 2
+Agent: Main
+Task: Fix glitchy tab transition — implement deferred unmount with absolute layering
+
+Work Log:
+- Identified root cause: `.tab-content` elements used `display: none/block` in normal document flow. During GSAP animation, both tabs were `display: block` simultaneously, causing them to stack vertically → layout jump/glitch
+- CSS fix: Changed `.tab-content` from `position: relative; flex: 1; contain: layout style` to `position: absolute; top: 0; left: 0; right: 0; bottom: 0; will-change: transform, opacity`. Removed unused `.swipe-enter-left`/`.swipe-enter-right` classes
+- Rewrote `A.switchTab()`: Both elements are now always absolutely positioned (overlapping). Uses z-index layering (outgoing=1, incoming=2). Exit animation: opacity 0 + y slide (0.22s). Enter animation: opacity 1 + y slide (0.30s, staggered 0.08s). Deferred unmount: outgoing `display: none` only fires in `onComplete` callback
+- Updated `switchTab()` orchestrator: Uses `gsap.set(t, { clearProps: 'all' })` on all tabs at start to clean stale inline styles from interrupted animations. Generation counter (`tabSwitchGen`) prevents stale `onComplete` callbacks
+- Verified: 30 rapid tab switches (10 cycles × 3 tabs) — zero console errors, correct final state
+- Verified all 3 tabs render correct content (Home with numpad, Reports with summary cards, Settings with all options)
+- Recorded demo video showing smooth transitions
+
+Stage Summary:
+- Tab transitions now use absolute layering — zero layout jump/glitch
+- Deferred unmount pattern: outgoing view stays visible until GSAP exit animation completes
+- Cross-fade with directional vertical slide (18px offset based on tab direction)
+- Interrupted animations handled cleanly via `clearProps: 'all'` + generation counter

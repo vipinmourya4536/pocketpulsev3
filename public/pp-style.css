@@ -77,23 +77,22 @@ body { background: #121212; display: flex; justify-content: center; align-items:
   }
 }
 
-/* TABS — flex-based switching with swipe states */
+/* TABS — flex-based switching with absolute layering during transition */
 .tab-content {
-  position: relative;
-  display: none; flex: 1; overflow-y: auto; padding: 20px 20px 100px;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: none;
+  overflow-y: auto;
+  padding: 20px 20px 100px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(100px + env(safe-area-inset-bottom));
   overscroll-behavior-y: auto;
-  contain: layout style;
+  will-change: transform, opacity;
 }
 .tab-content::-webkit-scrollbar { display: none; }
 .tab-content.active {
   display: block;
-}
-.tab-content.swipe-enter-left {
-}
-.tab-content.swipe-enter-right {
 }
 
 .header { font-size: 24px; font-weight: 800; color: var(--text); margin-bottom: 20px; }
