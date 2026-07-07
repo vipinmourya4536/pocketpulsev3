@@ -125,4 +125,22 @@ Stage Summary:
 - Nav dot animation now targets real DOM element instead of parent proxy
 - Generation counter prevents stale animation callbacks
 - Home scroll performance improved: no force3D on micro-interactions, opacity-only stagger, no backdrop-filter on touch, CSS contain properties
-- All fixes verified via agent-browser tests and VLM screenshot analysis
+- All fixes verified via agent-browser tests and VLM screenshot analysis---
+Task ID: 1
+Agent: Main
+Task: Fix buffering/FOUC on app load — undo mounted guard, eliminate hydration mismatch
+
+Work Log:
+- Identified that `useState(false)` + `mounted` guard in page.tsx was the root cause of buffering — it rendered empty div on SSR, then filled after useEffect, causing visible flash
+- Removed the `mounted` state guard entirely from page.tsx
+- Replaced `&apos;` HTML entity with `&#39;` (numeric entity, universally safe) to prevent hydration mismatch
+- Moved critical resources (Google Fonts preconnect, CSS link, unpkg.com preconnect) from page.tsx into layout.tsx <head>
+- Moved `theme-glass` class and all body layout styles (background #121212, flex centering, fixed positioning) directly into layout.tsx body element — no longer depends on JS execution
+- Removed redundant `useEffect` that was setting body styles (now handled by SSR)
+- Removed duplicate `<link>` tags from page.tsx (now in layout.tsx only)
+
+Stage Summary:
+- Page now renders with correct dark background and theme CSS variables immediately on SSR — zero flash
+- No hydration mismatch errors (verified via agent-browser console on fresh reload)
+- All 3 tabs (Home, Reports, Settings) switch correctly with all nav items visible
+- App loads in a single paint: HTML + CSS from SSR, scripts load asynchronously after

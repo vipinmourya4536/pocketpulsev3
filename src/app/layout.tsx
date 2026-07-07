@@ -12,7 +12,31 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body style={{ margin: 0, padding: 0 }}>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://unpkg.com" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        />
+        <link rel="stylesheet" href="/pp-style.css" />
+      </head>
+      <body
+        className="theme-glass"
+        style={{
+          margin: 0,
+          padding: 0,
+          background: '#121212',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'stretch',
+          minHeight: '100dvh',
+          overflow: 'hidden',
+          position: 'fixed',
+          inset: 0,
+        }}
+      >
         {children}
       </body>
     </html>
