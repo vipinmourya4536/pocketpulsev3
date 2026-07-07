@@ -1,10 +1,13 @@
 'use client';
 
 import Script from 'next/script';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function Page() {
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
     document.body.classList.add('theme-glass');
     document.body.style.cssText =
       'background:#121212;display:flex;justify-content:center;align-items:stretch;min-height:100dvh;overflow:hidden;position:fixed;inset:0;margin:0;padding:0;';
@@ -20,7 +23,11 @@ export default function Page() {
       />
       <link rel="stylesheet" href="/pp-style.css" />
 
-      <div className="app-container" dangerouslySetInnerHTML={{ __html: APP_HTML }} />
+      <div
+        className="app-container"
+        dangerouslySetInnerHTML={mounted ? { __html: APP_HTML } : undefined}
+        suppressHydrationWarning
+      />
 
       <Script
         src="https://unpkg.com/gsap@3.12.7/dist/gsap.min.js"
@@ -46,7 +53,7 @@ const APP_HTML = `
 
     <div class="hero-card">
       <div class="hero-label dropdown-trigger" data-action="openPeriodDropdown">
-        <span id="hero-period-label">THIS WEEK'S SPEND</span>
+        <span id="hero-period-label">THIS WEEK&apos;S SPEND</span>
         <i data-lucide="chevron-down" style="width: 14px; height: 14px; margin-left: 4px;"></i>
       </div>
       <div class="hero-amount" id="hero-total"><span class="hero-currency">₹</span>0</div>
@@ -82,7 +89,7 @@ const APP_HTML = `
     </div>
   </div>
 
-  <!-- TAB 2: REPORTS & LIMITS -->
+  <!-- TAB 2: REPORTS &amp; LIMITS -->
   <div class="tab-content" id="tab-reports">
     <div class="header">Reports &amp; Limits</div>
     <div class="summary-cards">
