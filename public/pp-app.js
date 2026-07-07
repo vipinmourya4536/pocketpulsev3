@@ -1164,7 +1164,7 @@ function renderCategoryBreakdown(categoryTotals, totalSpendPaise) {
   // GSAP category bar animation
   if (typeof gsap !== 'undefined') {
     const fills = container.querySelectorAll('.cat-bar-fill');
-    const pcts = sortedEntries.map(e => e.pct);
+    const pcts = sorted.map(([_, paise]) => totalSpendPaise > 0 ? (paise / totalSpendPaise * 100) : 0);
     A.categoryBars(fills, pcts);
   }
 }
