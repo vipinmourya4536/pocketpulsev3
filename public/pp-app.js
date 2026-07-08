@@ -67,6 +67,7 @@ const A = {
   openSheet(overlay, sheet) {
     const tl = gsap.timeline();
     gsap.killTweensOf([overlay, sheet]);
+    overlay.classList.add('open');
     tl.set(overlay, { visibility: 'visible' })
       .set(sheet, { transform: 'translateY(100%)', force3D: true })
       .to(overlay, { opacity: 1, duration: 0.25, ease: 'power2.out' }, 0)
@@ -77,11 +78,13 @@ const A = {
   closeSheet(overlay, sheet) {
     const tl = gsap.timeline({
       onComplete: () => {
+        overlay.classList.remove('open');
         gsap.set(overlay, { visibility: 'hidden', opacity: 0 });
         gsap.set(sheet, { transform: 'translateY(100%)' });
       }
     });
     gsap.killTweensOf([overlay, sheet]);
+    overlay.classList.remove('open');
     tl.to(sheet,   { transform: 'translateY(100%)', duration: 0.32, ease: 'power3.in', force3D: true }, 0)
       .to(overlay, { opacity: 0, duration: 0.22, ease: 'power2.in' }, 0.1);
     return tl;
@@ -371,36 +374,63 @@ class NavigationStack {
     this.stack = ['home'];
     this.isProcessing = false;
     this.exitTimer = null;
+    this.sheetStack = []; // track open sheet overlay IDs for back-button dismissal
     
-    history.replaceState({ tab: 'home', id: Date.now() }, '', '#home');
+    history.replaceState({ tab: 'home', sheet: null, id: Date.now() }, '', '#home');
     window.addEventListener('popstate', this.onPopState.bind(this));
   }
   
   push(tabId) {
     if (this.stack[this.stack.length - 1] === tabId) return;
     this.stack.push(tabId);
-    history.pushState({ tab: tabId, id: Date.now() }, '', `#${tabId}`);
+    history.pushState({ tab: tabId, sheet: null, id: Date.now() }, '', `#${tabId}`);
+  }
+
+  /** Call when a sheet/modal opens — pushes a history layer */
+  pushSheet(overlayId) {
+    if (this.sheetStack.includes(overlayId)) return;
+    this.sheetStack.push(overlayId);
+    const currentTab = this.stack[this.stack.length - 1];
+    history.pushState({ tab: currentTab, sheet: overlayId, id: Date.now() }, '');
+  }
+
+  /** Call when a sheet/modal closes via user interaction (not back button) */
+  popSheet(overlayId) {
+    const idx = this.sheetStack.indexOf(overlayId);
+    if (idx !== -1) this.sheetStack.splice(idx, 1);
   }
   
   onPopState(e) {
     if (this.isProcessing) return;
     
+    // Priority 1: dismiss open sheet with animation
     const openSheet = document.querySelector('.sheet-overlay.open');
     if (openSheet) {
       e.preventDefault();
-      this.preventExit();
-      openSheet.classList.remove('open');
-      document.querySelectorAll('.bottom-sheet').forEach(s => s.style.transform = '');
+      this.popSheet(openSheet.id);
+      const sheet = openSheet.querySelector('.bottom-sheet');
+      if (typeof gsap !== 'undefined' && sheet) {
+        A.closeSheet(openSheet, sheet);
+      } else {
+        openSheet.classList.remove('open');
+        if (sheet) sheet.style.transform = '';
+      }
+      // Re-push a clean state so user doesn't exit
+      const currentTab = this.stack[this.stack.length - 1];
+      history.pushState({ tab: currentTab, sheet: null, id: Date.now() }, '', `#${currentTab}`);
       return;
     }
     
+    // Priority 2: exit multi-select mode
     if (typeof isMultiSelectMode !== 'undefined' && isMultiSelectMode) {
       e.preventDefault();
-      this.preventExit();
       exitMultiSelect();
+      const currentTab = this.stack[this.stack.length - 1];
+      history.pushState({ tab: currentTab, sheet: null, id: Date.now() }, '', `#${currentTab}`);
       return;
     }
     
+    // Priority 3: navigate to previous tab
     if (this.stack.length > 1) {
       e.preventDefault();
       this.stack.pop();
@@ -418,7 +448,7 @@ class NavigationStack {
   
   preventExit() {
     const current = this.stack[this.stack.length - 1];
-    history.pushState({ tab: current, id: Date.now() }, '', `#${current}`);
+    history.pushState({ tab: current, sheet: null, id: Date.now() }, '', `#${current}`);
   }
   
   showExitConfirm() {
@@ -451,6 +481,8 @@ class SheetGestureManager {
   }
   
   onStart(e) {
+    // Never start drag from form elements or interactive controls
+    if (e.target.closest('input, textarea, select, button, .icon-slide, .type-btn, .icon-slider, .link-btn')) return;
     const isHandle = e.target.closest('.sheet-handle');
     const isTopArea = e.target === this.sheet || e.target.closest('.bottom-sheet');
     const isScrolledToTop = this.sheet.scrollTop <= 0;
@@ -962,6 +994,15 @@ function updateHeroCard(spendPaise, budgetMultiplier, label) {
   if (budgetBar) budgetBar.style.display = globalReportPeriod === 'all' ? 'none' : '';
 }
 
+/** Lightweight hero update from DB cache — no full history re-render */
+async function updateHeroFromCache() {
+  try {
+    const { fromDate, budgetMultiplier } = getPeriodConfig();
+    const { spendPaise } = await getAggregatesInRange(fromDate);
+    updateHeroCard(spendPaise, budgetMultiplier);
+  } catch (_) { /* silent — full updateState will run on next tab switch */ }
+}
+
 // ── Reports Tab ───────────────────────────────────────────────
 function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, limitLabel) {
   const surplusPaise = earnPaise - spendPaise;
@@ -1377,6 +1418,7 @@ function openEdit(id, note, amtPaise, type, icon, category) {
   } else {
     document.getElementById('edit-overlay').classList.add('open');
   }
+  if (navStack) navStack.pushSheet('edit-overlay');
 }
 
 function renderEditCategories() {
@@ -1395,10 +1437,10 @@ function renderEditCategories() {
 function selectEditIcon(el, icon, category) { currentEditIcon = icon; currentEditCategory = category; renderEditCategories(); }
 
 function closeEdit(e) {
-  if (e.target.id === 'edit-overlay') {
-    document.getElementById('edit-sheet').style.transform = '';
-    document.getElementById('edit-overlay').classList.remove('open');
-  }
+  if (e && e.target.id !== 'edit-overlay') return;
+  document.getElementById('edit-sheet').style.transform = '';
+  document.getElementById('edit-overlay').classList.remove('open');
+  if (navStack) navStack.popSheet('edit-overlay');
 }
 
 function setType(el, type) {
@@ -1420,6 +1462,51 @@ async function saveEdit() {
   const rawVal = parseFloat(document.getElementById('edit-amt-input').value) || 0;
   const newAmt = toPaise(rawVal); // store in PAISE
   const newNote = document.getElementById('edit-note-input').value || currentEditCategory;
+
+  // ── Optimistic UI: update card DOM immediately ──
+  const cardEl = document.getElementById(`tx-${currentEditId}`);
+  if (cardEl) {
+    const isSpend = currentEditType === 'spend';
+    const sign = isSpend ? `-${currencySymbol}` : `+${currencySymbol}`;
+    const noteEl = cardEl.querySelector('.entry-note');
+    const amtEl = cardEl.querySelector('.entry-amt');
+    const iconEl = cardEl.querySelector('.entry-icon');
+    if (noteEl) noteEl.textContent = newNote;
+    if (amtEl) {
+      amtEl.textContent = sign + fmtAmt(newAmt);
+      amtEl.className = `entry-amt ${isSpend ? 'spend' : 'earn'}`;
+    }
+    if (iconEl) {
+      iconEl.style.background = isSpend
+        ? 'color-mix(in srgb, var(--spend-color) 15%, transparent)'
+        : 'color-mix(in srgb, var(--earn-color) 15%, transparent)';
+      iconEl.style.color = isSpend ? 'var(--spend-color)' : 'var(--earn-color)';
+    }
+    // Update dataset for swipe-to-edit
+    const card = cardEl.querySelector('.entry-card');
+    if (card) {
+      card.dataset.note = newNote;
+      card.dataset.amount = newAmt;
+      card.dataset.type = currentEditType;
+      card.dataset.icon = currentEditIcon;
+      card.dataset.category = currentEditCategory;
+    }
+  }
+
+  // Close sheet immediately
+  if (typeof gsap !== 'undefined') {
+    A.closeSheet(document.getElementById('edit-overlay'), document.getElementById('edit-sheet'));
+  } else {
+    document.getElementById('edit-sheet').style.transform = '';
+    document.getElementById('edit-overlay').classList.remove('open');
+  }
+  if (navStack) navStack.popSheet('edit-overlay');
+  showToast('Changes saved! ✓');
+
+  // Update hero card in background (lightweight, no full re-render)
+  updateHeroFromCache();
+
+  // Persist to DB in background
   try {
     await db.transactions.update(currentEditId, {
       amount: newAmt,
@@ -1428,60 +1515,15 @@ async function saveEdit() {
       category: currentEditCategory,
       icon: currentEditIcon
     });
-    if (typeof gsap !== 'undefined') {
-      A.closeSheet(document.getElementById('edit-overlay'), document.getElementById('edit-sheet'));
-    } else {
-      document.getElementById('edit-sheet').style.transform = '';
-      document.getElementById('edit-overlay').classList.remove('open');
-    }
-    showToast('Changes saved! ✓');
+  } catch (err) {
+    console.error(err);
+    showToast('Error saving — reverting');
+    // Rollback: full re-render from DB
     updateState();
-  } catch (err) { console.error(err); showToast('Error saving changes'); }
+  }
 }
 
-// ── Bottom sheet swipe-to-close ───────────────────────────────
-const editSheet = document.getElementById('edit-sheet');
-let sheetStartY = 0, sheetCurrentY = 0, isDraggingSheet = false;
-editSheet.addEventListener('touchstart', e => {
-  if (e.target.closest('.sheet-handle') || e.target === editSheet) {
-    sheetStartY = e.touches[0].clientY; isDraggingSheet = true;
-    if (typeof gsap !== 'undefined') gsap.killTweensOf(editSheet);
-  }
-}, { passive: true });
-editSheet.addEventListener('touchmove', e => {
-  if (!isDraggingSheet) return;
-  sheetCurrentY = e.touches[0].clientY - sheetStartY;
-  if (sheetCurrentY > 0) {
-    if (e.cancelable) e.preventDefault();
-    editSheet.style.transform = `translateY(${sheetCurrentY}px)`;
-  }
-}, { passive: true });
-editSheet.addEventListener('touchend', () => {
-  if (!isDraggingSheet) return;
-  isDraggingSheet = false;
-  if (sheetCurrentY > 120) {
-    if (navigator.vibrate) navigator.vibrate(30);
-    if (typeof gsap !== 'undefined') {
-      gsap.to(editSheet, { transform: 'translateY(100%)', duration: 0.3, ease: 'power3.in', onComplete: () => {
-        document.getElementById('edit-overlay').style.visibility = 'hidden';
-        document.getElementById('edit-overlay').style.opacity = '0';
-      }});
-    } else {
-      editSheet.style.transform = 'translateY(100%)';
-      setTimeout(() => {
-        document.getElementById('edit-overlay').classList.remove('open');
-        editSheet.style.transform = '';
-      }, 400);
-    }
-  } else {
-    if (typeof gsap !== 'undefined') {
-      A.snapSheetBack(editSheet);
-    } else {
-      editSheet.style.transform = '';
-    }
-  }
-  sheetCurrentY = 0;
-});
+// (Edit sheet swipe-to-dismiss is now handled by SheetGestureManager above)
 
 // ── Toast ─────────────────────────────────────────────────────
 let toastTimer;
@@ -1706,12 +1748,14 @@ function openPeriodDropdown() {
   const ov = document.getElementById('period-overlay');
   if (typeof gsap !== 'undefined') A.openSheet(ov, document.getElementById('period-sheet'));
   else ov.classList.add('open');
+  if (navStack) navStack.pushSheet('period-overlay');
 }
 function closePeriod(e) {
   if (e && e.target.id !== 'period-overlay') return;
   const ov = document.getElementById('period-overlay');
   if (typeof gsap !== 'undefined') A.closeSheet(ov, document.getElementById('period-sheet'));
   else ov.classList.remove('open');
+  if (navStack) navStack.popSheet('period-overlay');
 }
 function setPeriod(period)    { globalReportPeriod = period; closePeriod(); updateState(); }
 
@@ -1720,12 +1764,14 @@ function openCurrencySheet() {
   const ov = document.getElementById('currency-overlay');
   if (typeof gsap !== 'undefined') A.openSheet(ov, document.getElementById('currency-sheet'));
   else ov.classList.add('open');
+  if (navStack) navStack.pushSheet('currency-overlay');
 }
 function closeCurrencySheet(e) {
   if (e && e.target.id !== 'currency-overlay') return;
   const ov = document.getElementById('currency-overlay');
   if (typeof gsap !== 'undefined') A.closeSheet(ov, document.getElementById('currency-sheet'));
   else ov.classList.remove('open');
+  if (navStack) navStack.popSheet('currency-overlay');
 }
 async function updateCurrencyState(newSymbol) {
   currencySymbol = newSymbol;
@@ -2010,9 +2056,9 @@ const ppInit = async () => {
       }
     });
     navStack = new NavigationStack(['home', 'reports', 'settings']);
-    new SheetGestureManager('edit-overlay', 'edit-overlay', () => closeEdit(null));
-    new SheetGestureManager('period-overlay', 'period-overlay', () => closePeriod(null));
-    new SheetGestureManager('currency-overlay', 'currency-overlay', () => closeCurrencySheet(null));
+    new SheetGestureManager('edit-sheet', 'edit-overlay', () => closeEdit(null));
+    new SheetGestureManager('period-sheet', 'period-overlay', () => closePeriod(null));
+    new SheetGestureManager('currency-sheet', 'currency-overlay', () => closeCurrencySheet(null));
 
   } catch (err) { console.error('Init error:', err); }
 };

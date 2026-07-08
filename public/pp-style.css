@@ -231,7 +231,11 @@ body { background: #121212; display: flex; justify-content: center; align-items:
 
 .limit-box { background: var(--card); padding: 20px; border-radius: 20px; border: 1px solid var(--border); margin-bottom: 12px; }
 .input-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px;}
-.limit-input { background: transparent; border: none; color: var(--text); font-size: 24px; font-weight: 800; text-align: right; outline: none; width: 60%; }
+.limit-input { background: transparent; border: none; color: var(--text); font-size: 24px; font-weight: 800; text-align: right; outline: none; width: 60%; -webkit-appearance: none; appearance: none; }
+.limit-input:focus { color: var(--text); }
+.limit-input::-webkit-inner-spin-button,
+.limit-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.limit-input { -moz-appearance: textfield; }
 
 /* Trend chart */
 .trend-box {
@@ -354,8 +358,22 @@ body { background: #121212; display: flex; justify-content: center; align-items:
 
 .input-group { margin-bottom: 16px; }
 .input-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; display: block; }
-.form-input { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 14px; border-radius: 12px; font-size: 15px; outline: none; font-weight: 600;}
-.form-input:focus { border-color: var(--accent); }
+.form-input {
+  width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text);
+  padding: 14px; border-radius: 12px; font-size: 15px; outline: none; font-weight: 600;
+  -webkit-appearance: none; appearance: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.form-input:focus {
+  border-color: var(--accent);
+  background-color: var(--card);
+  color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.form-input::placeholder { color: var(--muted); }
+.form-input::-webkit-inner-spin-button,
+.form-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.form-input[type="number"] { -moz-appearance: textfield; }
 
 .type-toggles { display: flex; gap: 8px; }
 .type-btn { flex: 1; padding: 12px; background: var(--card); border: 1px solid var(--border); color: var(--muted); border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; }

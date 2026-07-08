@@ -20,6 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Blocking: paint dark background before any content renders — prevents FOUC */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `document.documentElement.style.background='#121212';document.documentElement.style.color='#F0F0F0';`,
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://unpkg.com" />
