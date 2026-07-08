@@ -163,3 +163,21 @@ Stage Summary:
 - Deferred unmount pattern: outgoing view stays visible until GSAP exit animation completes
 - Cross-fade with directional vertical slide (18px offset based on tab direction)
 - Interrupted animations handled cleanly via `clearProps: 'all'` + generation counter
+---
+Task ID: 3
+Agent: Main
+Task: Fix 5 critical bugs — edit modal, input theme, optimistic save, FOUC, back button
+
+Work Log:
+- Bug 1: Found SheetGestureManager('edit-overlay','edit-overlay',...) — both IDs were the overlay, so touch listeners intercepted ALL touches including inputs. Fixed all 3 sheet managers to use correct (sheetId, overlayId). Added form element exclusion guard in onStart. Removed 40 lines of duplicate manual touch listeners.
+- Bug 2: Added -webkit-appearance:none, explicit background/color on :focus, hidden spin buttons, accent glow ring on focus for .form-input and .limit-input
+- Bug 3: Rewrote saveEdit() with optimistic pattern — card DOM updates instantly, sheet closes before DB write, lightweight updateHeroFromCache() replaces full updateState(), rollback on DB failure
+- Bug 4: Added blocking <script> in <head> that sets html background to #121212 before body parses
+- Bug 5: Added sheetStack to NavigationStack, pushSheet/popSheet on all sheet open/close, popstate uses GSAP A.closeSheet for animated dismissal, re-pushes clean state after sheet dismiss
+
+Stage Summary:
+- All 5 bugs fixed, verified via agent-browser automated tests
+- Input focus in edit modal works (sheet stays open, input receives focus)
+- Card updates from "food" → "Rajesh Dinner" instantly on save (100ms)
+- Zero lint errors, zero runtime console errors
+- Pushed to GitHub as commit 810362c
