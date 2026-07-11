@@ -1,37 +1,46 @@
 {
   "name": "PocketPulse Expense Tracker",
   "short_name": "PocketPulse",
-  "description": "Premium glassmorphic expense tracker with quick-logging and dynamic budgets.",
+  "description": "Premium glassmorphic expense tracker with quick-logging and dynamic budgets. Works offline.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#121212",
   "theme_color": "#121212",
   "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["finance", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "icon-192x192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-192x192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icon-512x512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "categories": ["finance", "productivity"],
   "screenshots": [
     {
-      "src": "icon-512x512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "form_factor": "narrow"

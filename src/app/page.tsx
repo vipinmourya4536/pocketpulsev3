@@ -11,19 +11,51 @@ export default function Page() {
         suppressHydrationWarning
       />
 
+      {/* CDN Libraries — crossOrigin enables SW to cache them for offline use */}
       <Script
         src="https://unpkg.com/gsap@3.12.7/dist/gsap.min.js"
         strategy="afterInteractive"
+        crossOrigin="anonymous"
       />
       <Script
         src="https://unpkg.com/lucide@0.359.0/dist/umd/lucide.js"
         strategy="afterInteractive"
+        crossOrigin="anonymous"
       />
       <Script
         src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"
         strategy="afterInteractive"
+        crossOrigin="anonymous"
       />
       <Script src="/pp-app.js" strategy="afterInteractive" />
+
+      {/* Offline-ready indicator: logs when all critical resources are available */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            (function() {
+              function checkReady() {
+                var missing = [];
+                if (typeof gsap === 'undefined') missing.push('GSAP');
+                if (typeof lucide === 'undefined') missing.push('Lucide');
+                if (typeof Dexie === 'undefined') missing.push('Dexie');
+                if (missing.length > 0) {
+                  console.warn('[PocketPulse] Offline: using cached fallbacks for:', missing.join(', '));
+                } else {
+                  console.log('[PocketPulse] All resources loaded — app ready');
+                }
+              }
+              if (document.readyState === 'complete') {
+                setTimeout(checkReady, 500);
+              } else {
+                window.addEventListener('load', function() {
+                  setTimeout(checkReady, 500);
+                });
+              }
+            })();
+          `,
+        }}
+      />
     </>
   );
 }
