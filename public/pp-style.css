@@ -107,13 +107,12 @@ body { background: #121212; display: flex; justify-content: center; align-items:
 }
 .hero-label-row { display: flex; align-items: center; gap: 4px; }
 .week-nav-btn {
-  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border);
-  background: transparent; color: var(--muted); font-size: 20px; font-weight: 700;
+  background: none; border: none; color: var(--muted); font-size: 22px; font-weight: 700;
   cursor: pointer; display: none; align-items: center; justify-content: center;
-  line-height: 1; padding: 0; transition: color 0.2s, border-color 0.2s, opacity 0.2s;
+  line-height: 1; padding: 4px 2px; transition: color 0.2s, opacity 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
-.week-nav-btn:active { color: var(--accent); border-color: var(--accent); }
+.week-nav-btn:active { color: var(--accent); }
 .week-nav-btn.disabled { opacity: 0.2; pointer-events: none; }
 .week-nav-btn.visible { display: flex; }
 .dropdown-trigger { display: inline-flex; align-items: center; cursor: pointer; flex: 1; min-width: 0; }
