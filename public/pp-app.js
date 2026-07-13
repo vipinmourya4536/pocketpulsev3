@@ -785,6 +785,7 @@ let acc = 0;          // running total — PAISE
 let tapHistory = [];  // per-tap paise values
 let numpadValues = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]; // display ₹ denominations
 let globalReportPeriod = 'weekly';
+let weekOffset = 0; // 0 = current week, -1 = last week, etc.
 let currencySymbol = '₹';
 let appTheme = 'glass';
 
@@ -911,20 +912,45 @@ function getPeriodConfig() {
       const monday = new Date(now);
       monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
       monday.setHours(0, 0, 0, 0);
-      return { fromDate: monday.getTime(), label: "THIS WEEK'S SPEND", limitLabel: 'Weekly Max Limit', budgetMultiplier: 1 };
+
+      // Apply week offset
+      const offsetMonday = new Date(monday);
+      offsetMonday.setDate(monday.getDate() + (weekOffset * 7));
+
+      const sunday = new Date(offsetMonday);
+      sunday.setDate(offsetMonday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+
+      // For current week, toDate = now; for past weeks, toDate = end of that week
+      const toDate = weekOffset === 0 ? Date.now() : sunday.getTime();
+
+      // Label
+      const fmtShort = (d) => d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+      let label;
+      if (weekOffset === 0) {
+        label = "THIS WEEK'S SPEND";
+      } else if (weekOffset === -1) {
+        label = "LAST WEEK'S SPEND";
+      } else {
+        label = `${fmtShort(offsetMonday)} – ${fmtShort(sunday)}`;
+      }
+
+      return { fromDate: offsetMonday.getTime(), toDate, label, limitLabel: 'Weekly Max Limit', budgetMultiplier: 1, isCustomWeek: weekOffset !== 0, weekStart: offsetMonday.getTime() };
     }
     case 'monthly':
       return {
         fromDate: new Date(now.getFullYear(), now.getMonth(), 1).getTime(),
-        label: "THIS MONTH'S SPEND", limitLabel: 'Monthly Max Limit', budgetMultiplier: 4.33
+        toDate: Date.now(),
+        label: "THIS MONTH'S SPEND", limitLabel: 'Monthly Max Limit', budgetMultiplier: 4.33, isCustomWeek: false, weekStart: null
       };
     case 'yearly':
       return {
         fromDate: new Date(now.getFullYear(), 0, 1).getTime(),
-        label: "THIS YEAR'S SPEND", limitLabel: 'Yearly Max Limit', budgetMultiplier: 52
+        toDate: Date.now(),
+        label: "THIS YEAR'S SPEND", limitLabel: 'Yearly Max Limit', budgetMultiplier: 52, isCustomWeek: false, weekStart: null
       };
     default: // 'all'
-      return { fromDate: 0, label: 'ALL TIME SPEND', limitLabel: 'All Time Max Limit', budgetMultiplier: 1 };
+      return { fromDate: 0, toDate: Date.now(), label: 'ALL TIME SPEND', limitLabel: 'All Time Max Limit', budgetMultiplier: 1, isCustomWeek: false, weekStart: null };
   }
 }
 
@@ -935,24 +961,27 @@ async function updateState() {
   if (isUpdatingState) return;
   isUpdatingState = true;
   try {
-    const { fromDate, label, limitLabel, budgetMultiplier } = getPeriodConfig();
+    const { fromDate, toDate, label, limitLabel, budgetMultiplier, isCustomWeek, weekStart } = getPeriodConfig();
+
+    // Update week nav button visibility
+    updateWeekNavButtons();
 
     let aggs;
     if (!navigator.onLine) {
-      const cached = await db.reportCache.get(globalReportPeriod);
+      const cached = await db.reportCache.get(globalReportPeriod + '_' + weekOffset);
       aggs = cached ? cached.data : { spendPaise: 0, earnPaise: 0, txs: [] };
     } else {
-      aggs = await getAggregatesInRange(fromDate);
-      await db.reportCache.put({ id: globalReportPeriod, data: aggs });
+      aggs = await getAggregatesInRange(fromDate, toDate);
+      await db.reportCache.put({ id: globalReportPeriod + '_' + weekOffset, data: aggs });
     }
     const { spendPaise, earnPaise, txs } = aggs;
 
     if (currentTab === 'home') {
       document.getElementById('hero-period-label').textContent = label;
-      updateHeroCard(spendPaise, budgetMultiplier, label);
-      await renderHistory(true); // Reset and load page 1
+      updateHeroCard(spendPaise, budgetMultiplier, label, isCustomWeek);
+      await renderHistory(true, fromDate, toDate); // Pass date range for filtering
     } else if (currentTab === 'reports') {
-      updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, limitLabel);
+      updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, toDate, limitLabel, weekStart);
     }
   } finally {
     isUpdatingState = false;
@@ -968,7 +997,7 @@ function animateCounter(element, fromPaise, toPaise_target, duration) {
   }
 }
 
-function updateHeroCard(spendPaise, budgetMultiplier, label) {
+function updateHeroCard(spendPaise, budgetMultiplier, label, isCustomWeek) {
   const heroEl = document.getElementById('hero-total');
   animateCounter(heroEl, previousSpendPaise, spendPaise);
   previousSpendPaise = spendPaise;
@@ -994,17 +1023,50 @@ function updateHeroCard(spendPaise, budgetMultiplier, label) {
   if (budgetBar) budgetBar.style.display = globalReportPeriod === 'all' ? 'none' : '';
 }
 
+// ── Week Navigation ──────────────────────────────────────────
+function updateWeekNavButtons() {
+  const prevBtn = document.getElementById('week-prev');
+  const nextBtn = document.getElementById('week-next');
+  if (!prevBtn || !nextBtn) return;
+
+  if (globalReportPeriod === 'weekly') {
+    prevBtn.classList.add('visible');
+    nextBtn.classList.add('visible');
+    // Disable "next" if already at current week (can't go to future)
+    if (weekOffset >= 0) {
+      nextBtn.classList.add('disabled');
+    } else {
+      nextBtn.classList.remove('disabled');
+    }
+    // Disable "prev" if no transactions could exist (optional: could go back infinitely)
+    prevBtn.classList.remove('disabled');
+  } else {
+    prevBtn.classList.remove('visible');
+    nextBtn.classList.remove('visible');
+  }
+}
+
+function navigateWeek(direction) {
+  if (globalReportPeriod !== 'weekly') return;
+  const newOffset = weekOffset + direction;
+  // Don't allow navigating to future weeks
+  if (newOffset > 0) return;
+  weekOffset = newOffset;
+  if (navigator.vibrate) navigator.vibrate(15);
+  updateState();
+}
+
 /** Lightweight hero update from DB cache — no full history re-render */
 async function updateHeroFromCache() {
   try {
-    const { fromDate, budgetMultiplier } = getPeriodConfig();
-    const { spendPaise } = await getAggregatesInRange(fromDate);
+    const { fromDate, toDate, budgetMultiplier } = getPeriodConfig();
+    const { spendPaise } = await getAggregatesInRange(fromDate, toDate);
     updateHeroCard(spendPaise, budgetMultiplier);
   } catch (_) { /* silent — full updateState will run on next tab switch */ }
 }
 
 // ── Reports Tab ───────────────────────────────────────────────
-function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, limitLabel) {
+function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate, toDate, limitLabel, weekStart) {
   const surplusPaise = earnPaise - spendPaise;
   const spendRupees = spendPaise / 100;
   const safeToSpend = Math.max(0, (weeklyBudget * budgetMultiplier) - spendRupees);
@@ -1020,7 +1082,7 @@ function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate
   document.getElementById('limit-label').textContent = limitLabel;
 
   // Rebuild trend chart with period-aware buckets
-  renderTrendBox(txs, globalReportPeriod);
+  renderTrendBox(txs, globalReportPeriod, weekStart);
 
   // Rebuild category breakdown
   const categoryTotals = {};
@@ -1033,7 +1095,7 @@ function updateReportsTab(spendPaise, earnPaise, txs, budgetMultiplier, fromDate
 // ============================================================
 // TREND CHART — Period-aware buckets
 // ============================================================
-function renderTrendBox(txs, period) {
+function renderTrendBox(txs, period, customWeekStart) {
   const trendBox = document.getElementById('trend-box');
   if (!trendBox) return;
 
@@ -1053,13 +1115,16 @@ function renderTrendBox(txs, period) {
   if (period === 'weekly') {
     buckets = Array(7).fill(0);
     labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const today = new Date(); today.setHours(0,0,0,0);
-    const dayOfWeek = (today.getDay() + 6) % 7; 
-    const weekStart = new Date(today); weekStart.setDate(today.getDate() - dayOfWeek);
+    const weekStartDate = customWeekStart ? new Date(customWeekStart) : (() => {
+      const d = new Date(); d.setHours(0,0,0,0);
+      const dow = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - dow);
+      return d;
+    })();
 
     spendTxs.forEach(t => {
       const tDate = new Date(t.date); tDate.setHours(0,0,0,0);
-      const diff = Math.floor((tDate - weekStart) / 86400000);
+      const diff = Math.floor((tDate - weekStartDate) / 86400000);
       if (diff >= 0 && diff < 7) buckets[diff] += t.amount;
     });
 
@@ -1097,7 +1162,8 @@ function renderTrendBox(txs, period) {
   }
 
   const maxVal = Math.max(...buckets, 1);
-  const todayBucketIdx = period === 'weekly' ? (now.getDay() + 6) % 7 : -1;
+  // Highlight today's bar only for current week
+  const todayBucketIdx = (period === 'weekly' && weekOffset === 0) ? (now.getDay() + 6) % 7 : -1;
 
   // DOM POOLING
   const requiredCount = buckets.length;
@@ -1326,12 +1392,21 @@ function buildTxCard(t) {
 }
 
 /** Render paginated history */
-async function renderHistory(reset = false) {
+async function renderHistory(reset = false, fromDate, toDate) {
   const container = document.getElementById('history-container');
 
   if (reset) {
     historyPage = 0;
-    historyTotalCount = await countTx();
+    // If date range provided (week navigation), count and filter by range
+    if (fromDate !== undefined && toDate !== undefined) {
+      const rangeTxs = await getTxInRange(fromDate, toDate);
+      historyTotalCount = rangeTxs.length;
+      // Store filtered txs for pagination
+      renderHistory._filteredTxs = rangeTxs;
+    } else {
+      historyTotalCount = await countTx();
+      renderHistory._filteredTxs = null;
+    }
     container.classList.add('loading');
     // Remove skeleton on first real load
     const skel = document.getElementById('history-skeleton');
@@ -1343,10 +1418,20 @@ async function renderHistory(reset = false) {
   if (isLoadingHistory) return;
   isLoadingHistory = true;
 
-  const txs = await getTxPage(historyPage * HISTORY_PAGE_SIZE, HISTORY_PAGE_SIZE);
+  let txs;
+  if (renderHistory._filteredTxs) {
+    // Paginate from filtered results
+    const start = historyPage * HISTORY_PAGE_SIZE;
+    txs = renderHistory._filteredTxs.slice(start, start + HISTORY_PAGE_SIZE);
+  } else {
+    txs = await getTxPage(historyPage * HISTORY_PAGE_SIZE, HISTORY_PAGE_SIZE);
+  }
 
   if (txs.length === 0 && historyPage === 0) {
-    container.innerHTML = '<div class="empty-state">No transactions yet.<br>Tap a number to log your first one!</div>';
+    const isWeekView = globalReportPeriod === 'weekly' && weekOffset !== 0;
+    container.innerHTML = isWeekView
+      ? '<div class="empty-state">No transactions in this week.</div>'
+      : '<div class="empty-state">No transactions yet.<br>Tap a number to log your first one!</div>';
     isLoadingHistory = false;
     container.classList.remove('loading');
     return;
@@ -1757,7 +1842,7 @@ function closePeriod(e) {
   else ov.classList.remove('open');
   if (navStack) navStack.popSheet('period-overlay');
 }
-function setPeriod(period)    { globalReportPeriod = period; closePeriod(); updateState(); }
+function setPeriod(period)    { globalReportPeriod = period; weekOffset = 0; closePeriod(); updateState(); }
 
 // ── Currency dropdown ─────────────────────────────────────────
 function openCurrencySheet() {
@@ -1914,6 +1999,7 @@ window.wipeData          = wipeData;
 window.openPeriodDropdown= openPeriodDropdown;
 window.closePeriod       = closePeriod;
 window.setPeriod         = setPeriod;
+window.navigateWeek      = navigateWeek;
 window.openCurrencySheet = openCurrencySheet;
 window.closeCurrencySheet= closeCurrencySheet;
 window.updateCurrencyState=updateCurrencyState;
@@ -2039,6 +2125,8 @@ const ppInit = async () => {
       if (action === 'setType') setType(actionEl, actionEl.dataset.type);
       if (action === 'setPeriod') setPeriod(actionEl.dataset.period);
       if (action === 'updateCurrencyState') updateCurrencyState(actionEl.dataset.currency);
+      if (action === 'prevWeek') navigateWeek(-1);
+      if (action === 'nextWeek') navigateWeek(1);
     });
 
     // Direct event listeners for inputs
@@ -2060,8 +2148,53 @@ const ppInit = async () => {
     new SheetGestureManager('period-sheet', 'period-overlay', () => closePeriod(null));
     new SheetGestureManager('currency-sheet', 'currency-overlay', () => closeCurrencySheet(null));
 
+    // Hero card swipe for week navigation
+    initHeroSwipe();
+
   } catch (err) { console.error('Init error:', err); }
 };
+
+// ── Hero Card Swipe — Navigate weeks by swiping left/right on hero card
+function initHeroSwipe() {
+  const heroCard = document.querySelector('.hero-card');
+  if (!heroCard) return;
+  let startX = 0, startY = 0, startTime = 0, tracking = false;
+
+  heroCard.addEventListener('touchstart', (e) => {
+    // Don't intercept if touching a button or dropdown trigger
+    if (e.target.closest('.week-nav-btn, .dropdown-trigger, button')) return;
+    const touch = e.changedTouches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startTime = performance.now();
+    tracking = true;
+  }, { passive: true });
+
+  heroCard.addEventListener('touchmove', (e) => {
+    if (!tracking || globalReportPeriod !== 'weekly') return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    // Cancel if vertical scroll dominates
+    if (Math.abs(dy) > Math.abs(dx) * 1.5) tracking = false;
+  }, { passive: true });
+
+  heroCard.addEventListener('touchend', (e) => {
+    if (!tracking || globalReportPeriod !== 'weekly') { tracking = false; return; }
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - startX;
+    const dt = performance.now() - startTime;
+    const absDx = Math.abs(dx);
+    const velocity = absDx / dt;
+    tracking = false;
+
+    const isSwipe = (absDx > 40 && velocity > 0.2) || absDx > 100;
+    if (!isSwipe) return;
+
+    if (dx > 0) navigateWeek(-1);  // swipe right → go to previous week
+    else navigateWeek(1);         // swipe left → go to next week
+  }, { passive: true });
+}
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
   ppInit();

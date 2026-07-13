@@ -66,9 +66,13 @@ const APP_HTML = `
     <div class="header">Home</div>
 
     <div class="hero-card">
-      <div class="hero-label dropdown-trigger" data-action="openPeriodDropdown">
-        <span id="hero-period-label">THIS WEEK&#39;S SPEND</span>
-        <i data-lucide="chevron-down" style="width: 14px; height: 14px; margin-left: 4px;"></i>
+      <div class="hero-label-row">
+        <button class="week-nav-btn" id="week-prev" data-action="prevWeek">&#8249;</button>
+        <div class="hero-label dropdown-trigger" data-action="openPeriodDropdown">
+          <span id="hero-period-label">THIS WEEK&#39;S SPEND</span>
+          <i data-lucide="chevron-down" style="width: 14px; height: 14px; margin-left: 4px;"></i>
+        </div>
+        <button class="week-nav-btn" id="week-next" data-action="nextWeek">&#8250;</button>
       </div>
       <div class="hero-amount" id="hero-total"><span class="hero-currency">₹</span>0</div>
       <div class="hero-budget-info" style="font-size:13px; color:var(--muted); font-weight: 600;">of <span id="hero-limit-display">₹3,000</span> limit</div>
