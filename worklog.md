@@ -217,3 +217,34 @@ Stage Summary:
 - Three-tier caching strategy ensures optimal online performance + offline reliability
 - PWA manifest configured for installability on mobile devices
 - All interactive features verified working in offline mode
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add week navigation slider to view and compare spending across weeks
+
+Work Log:
+- Analyzed screenshot to understand UI context (hero card with period dropdown)
+- Read pp-app.js thoroughly: getPeriodConfig(), updateState(), renderHistory(), renderTrendBox(), getAggregatesInRange()
+- Added weekOffset state variable (0=current, -1=last, etc.)
+- Rewrote getPeriodConfig() to compute fromDate/toDate with weekOffset, return toDate and weekStart
+- Added navigateWeek(direction) function with future-week guard
+- Added updateWeekNavButtons() to show/hide arrows based on period type and current position
+- Modified updateState() to pass toDate and filter history by date range
+- Modified renderHistory() to accept optional fromDate/toDate for filtered pagination
+- Modified renderTrendBox() to use customWeekStart instead of always computing from today
+- Modified updateReportsTab() to receive weekStart for correct trend chart
+- Smart labels: "THIS WEEK'S SPEND" / "LAST WEEK'S SPEND" / "Jun 29 – Jul 5"
+- Added hero card swipe gesture (initHeroSwipe) for touch-based week navigation
+- Period dropdown resets weekOffset to 0 when switching periods
+- Updated page.tsx HTML: wrapped label in hero-label-row with ‹ › buttons
+- Added CSS: .hero-label-row, .week-nav-btn (hidden by default, .visible to show, .disabled to gray out)
+
+Stage Summary:
+- Week navigation arrows visible only in weekly mode, hidden for month/year/all
+- Reports tab automatically updates with selected week's data
+- Trend chart correctly distributes bars for past weeks (no "today" highlight)
+- History list filters to show only the selected week's transactions
+- Empty state contextualized: "No transactions in this week" vs default
+- Swipe gesture on hero card for touch navigation
+- Next button disabled at current week boundary
+- All verified with agent-browser: zero errors, correct labels, proper data flow
