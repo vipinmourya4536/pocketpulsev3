@@ -1,7 +1,5 @@
 'use client';
 
-import Script from 'next/script';
-
 export default function Page() {
   return (
     <>
@@ -11,25 +9,10 @@ export default function Page() {
         suppressHydrationWarning
       />
 
-      {/* CDN Libraries — crossOrigin enables SW to cache them for offline use */}
-      <Script
-        src="https://unpkg.com/gsap@3.12.7/dist/gsap.min.js"
-        strategy="afterInteractive"
-        crossOrigin="anonymous"
-      />
-      <Script
-        src="https://unpkg.com/lucide@0.359.0/dist/umd/lucide.js"
-        strategy="afterInteractive"
-        crossOrigin="anonymous"
-      />
-      <Script
-        src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"
-        strategy="afterInteractive"
-        crossOrigin="anonymous"
-      />
-      <Script src="/pp-app.js" strategy="afterInteractive" />
+      {/* CDN Libraries are loaded via raw <script> tags in layout.tsx
+          so they work offline even without React hydration. */}
 
-      {/* Offline-ready indicator: logs when all critical resources are available */}
+      {/* Offline-ready indicator */}
       <script
         dangerouslySetInnerHTML={{
           __html: `
